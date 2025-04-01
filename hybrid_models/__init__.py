@@ -5,6 +5,10 @@ from .training import train_hybrid_model
 from .evaluation import calculate_metrics, evaluate_hybrid_model
 from .utils import (normalize_data, combine_normalization_params,
                     calculate_rate, create_initial_random_key)
+# Add these imports to your existing imports in hybrid_models/__init__.py
+from .parallel_processing import parallel_loss_function, parallel_dataset_loss
+from .optimized_nn import optimize_nn_components
+from .optimized_hybrid_training import train_hybrid_optimized
 
 
 class HybridModelBuilder:
