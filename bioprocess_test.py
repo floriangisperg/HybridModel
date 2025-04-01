@@ -19,7 +19,8 @@ from hybrid_models import (
     create_initial_random_key,
     # Import new data handling classes and functions
     TimeSeriesData,
-    prepare_datasets_for_training
+    prepare_datasets_for_training,
+    VariableType
 )
 
 
@@ -66,32 +67,6 @@ def load_bioprocess_data(file_path, run_ids=None, max_runs=2):
 
     # Apply normalization parameters
     TimeSeriesData.apply_normalization_parameters(datasets, norm_params)
-
-    return datasets
-    # correct
-    # variable
-    # types
-    for dataset in datasets:
-        # Add state variables
-        dataset.add_state('CDW(g/L)', 'X', is_output=True)
-        dataset.add_state('Produktsol(g/L)', 'P', is_output=True)
-
-        # Add input variables with rate calculation
-        dataset.add_input('Temp(°C)', 'temp')
-        dataset.add_input('Feed(L)', 'feed', calculate_rate=True)
-        dataset.add_input('Base(L)', 'base', calculate_rate=True)
-        dataset.add_input('InductorMASS(mg)', 'inductor_mass')
-        dataset.add_input('Inductor(yesno)', 'inductor_switch')
-        dataset.add_input('Reaktorvolumen(L)', 'reactor_volume')
-
-        # Interpolate to handle missing values
-        dataset.interpolate()
-
-    # Calculate normalization parameters for all datasets
-    norm_params = calculate_normalization_parameters(datasets)
-
-    # Apply normalization parameters
-    apply_normalization_parameters(datasets, norm_params)
 
     return datasets
 
@@ -206,7 +181,8 @@ def bioprocess_loss_function(model, datasets):
             t_span=(dataset['times'][0], dataset['times'][-1]),
             evaluation_times=dataset['times'],
             args={
-                'time_dependent_inputs': dataset['time_dependent_inputs']
+                'time_dependent_inputs': dataset['time_dependent_inputs'],
+                'static_inputs': dataset.get('static_inputs', {})
             },
             max_steps=100000,
             rtol=1e-2,  # Slightly relaxed tolerance
@@ -244,7 +220,8 @@ def solve_for_dataset(model, dataset):
         t_span=(dataset['times'][0], dataset['times'][-1]),
         evaluation_times=dataset['times'],
         args={
-            'time_dependent_inputs': dataset['time_dependent_inputs']
+            'time_dependent_inputs': dataset['time_dependent_inputs'],
+            'static_inputs': dataset.get('static_inputs', {})
         },
         max_steps=100000,
         rtol=1e-2,  # Slightly relaxed tolerance
@@ -322,8 +299,6 @@ def plot_results(model, datasets, history, output_dir="results"):
 # MAIN FUNCTION
 # =============================================
 
-
-
 def main():
     # Load data
     print("Loading data...")
@@ -356,7 +331,6 @@ def main():
     except Exception as e:
         print(f"Error during training: {type(e).__name__}: {e}")
         import traceback
-
         traceback.print_exc()
         print("\nFalling back to returning the untrained model")
         history = {"loss": [], "aux": []}
@@ -389,6 +363,7 @@ def main():
 
     print("Process complete!")
     return trained_model, training_datasets, history
+
 
 if __name__ == "__main__":
     main()
