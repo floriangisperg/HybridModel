@@ -382,7 +382,7 @@ def main():
     print("Loading data...")
     data_manager = load_bioprocess_data(
         'Train_data_masked.xlsx',
-        train_run_ids=["58","61"],  # Use default train/test split
+        train_run_ids=None, #["58","61"],  # Use default train/test split
         test_run_ids=None,
         train_ratio=0.8
     )
