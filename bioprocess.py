@@ -19,7 +19,8 @@ from hybrid_models import (
     create_initial_random_key,
     # Import new data handling classes and functions
     TimeSeriesData,
-    prepare_datasets_for_training
+    prepare_datasets_for_training,
+    VariableType
 )
 
 
@@ -59,39 +60,13 @@ def load_bioprocess_data(file_path, run_ids=None, max_runs=2):
         dataset.add_control('Reaktorvolumen(L)', 'reactor_volume')
 
         # Interpolate to handle missing values
-        dataset.interpolate()
+        # dataset.interpolate()
 
     # Calculate normalization parameters for all datasets
     norm_params = TimeSeriesData.calculate_normalization_parameters(datasets)
 
     # Apply normalization parameters
     TimeSeriesData.apply_normalization_parameters(datasets, norm_params)
-
-    return datasets
-    # correct
-    # variable
-    # types
-    for dataset in datasets:
-        # Add state variables
-        dataset.add_state('CDW(g/L)', 'X', is_output=True)
-        dataset.add_state('Produktsol(g/L)', 'P', is_output=True)
-
-        # Add input variables with rate calculation
-        dataset.add_input('Temp(°C)', 'temp')
-        dataset.add_input('Feed(L)', 'feed', calculate_rate=True)
-        dataset.add_input('Base(L)', 'base', calculate_rate=True)
-        dataset.add_input('InductorMASS(mg)', 'inductor_mass')
-        dataset.add_input('Inductor(yesno)', 'inductor_switch')
-        dataset.add_input('Reaktorvolumen(L)', 'reactor_volume')
-
-        # Interpolate to handle missing values
-        dataset.interpolate()
-
-    # Calculate normalization parameters for all datasets
-    norm_params = calculate_normalization_parameters(datasets)
-
-    # Apply normalization parameters
-    apply_normalization_parameters(datasets, norm_params)
 
     return datasets
 
@@ -206,7 +181,8 @@ def bioprocess_loss_function(model, datasets):
             t_span=(dataset['times'][0], dataset['times'][-1]),
             evaluation_times=dataset['times'],
             args={
-                'time_dependent_inputs': dataset['time_dependent_inputs']
+                'time_dependent_inputs': dataset['time_dependent_inputs'],
+                'static_inputs': dataset.get('static_inputs', {})
             },
             max_steps=100000,
             rtol=1e-2,  # Slightly relaxed tolerance
@@ -219,8 +195,12 @@ def bioprocess_loss_function(model, datasets):
         X_true = dataset['X_true']
         P_true = dataset['P_true']
 
-        X_loss = jnp.mean(jnp.square(X_pred - X_true))
-        P_loss = jnp.mean(jnp.square(P_pred - P_true))
+        # Make sure arrays have the same length
+        min_len_x = min(len(X_pred), len(X_true))
+        min_len_p = min(len(P_pred), len(P_true))
+
+        X_loss = jnp.mean(jnp.square(X_pred[:min_len_x] - X_true[:min_len_x]))
+        P_loss = jnp.mean(jnp.square(P_pred[:min_len_p] - P_true[:min_len_p]))
 
         # Add to total loss
         run_loss = X_loss + P_loss
@@ -244,7 +224,8 @@ def solve_for_dataset(model, dataset):
         t_span=(dataset['times'][0], dataset['times'][-1]),
         evaluation_times=dataset['times'],
         args={
-            'time_dependent_inputs': dataset['time_dependent_inputs']
+            'time_dependent_inputs': dataset['time_dependent_inputs'],
+            'static_inputs': dataset.get('static_inputs', {})
         },
         max_steps=100000,
         rtol=1e-2,  # Slightly relaxed tolerance
@@ -264,28 +245,30 @@ def plot_results(model, datasets, history, output_dir="results"):
     os.makedirs(output_dir, exist_ok=True)
 
     # Plot training history
-    plt.figure(figsize=(10, 6))
-    plt.plot(history['loss'], 'b-')
-    plt.title('Training Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.grid(True)
-    plt.savefig(os.path.join(output_dir, 'training_loss.png'))
-    plt.close()
+    if 'loss' in history and history['loss']:
+        plt.figure(figsize=(10, 6))
+        plt.plot(history['loss'], 'b-')
+        plt.title('Training Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.grid(True)
+        plt.savefig(os.path.join(output_dir, 'training_loss.png'))
+        plt.close()
 
     # Plot component losses
-    plt.figure(figsize=(10, 6))
-    x_losses = [aux[0] for aux in history['aux']]
-    p_losses = [aux[1] for aux in history['aux']]
-    plt.plot(x_losses, 'g-', label='X Loss')
-    plt.plot(p_losses, 'r-', label='P Loss')
-    plt.title('Component Losses')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(os.path.join(output_dir, 'component_losses.png'))
-    plt.close()
+    if 'aux' in history and history['aux']:
+        plt.figure(figsize=(10, 6))
+        x_losses = [aux[0] for aux in history['aux']]
+        p_losses = [aux[1] for aux in history['aux']]
+        plt.plot(x_losses, 'g-', label='X Loss')
+        plt.plot(p_losses, 'r-', label='P Loss')
+        plt.title('Component Losses')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(os.path.join(output_dir, 'component_losses.png'))
+        plt.close()
 
     # Plot predictions for each dataset
     for i, dataset in enumerate(datasets):
@@ -295,8 +278,37 @@ def plot_results(model, datasets, history, output_dir="results"):
         # Create plots
         fig, axs = plt.subplots(2, 1, figsize=(10, 12))
 
+        # Make sure we have X_true and P_true
+        if 'X_true' not in dataset or 'P_true' not in dataset:
+            print(f"Warning: Dataset {i} missing true values. Skipping plots.")
+            plt.close()
+            continue
+
+        # Check if arrays have the same length
+        if len(dataset['times']) != len(dataset['X_true']):
+            print(
+                f"Warning: Dataset {i} has mismatched dimensions for X. times:{len(dataset['times'])}, X_true:{len(dataset['X_true'])}")
+            # Use the shorter length
+            min_len = min(len(dataset['times']), len(dataset['X_true']))
+            times_X = dataset['times'][:min_len]
+            X_true = dataset['X_true'][:min_len]
+        else:
+            times_X = dataset['times']
+            X_true = dataset['X_true']
+
+        if len(dataset['times']) != len(dataset['P_true']):
+            print(
+                f"Warning: Dataset {i} has mismatched dimensions for P. times:{len(dataset['times'])}, P_true:{len(dataset['P_true'])}")
+            # Use the shorter length
+            min_len = min(len(dataset['times']), len(dataset['P_true']))
+            times_P = dataset['times'][:min_len]
+            P_true = dataset['P_true'][:min_len]
+        else:
+            times_P = dataset['times']
+            P_true = dataset['P_true']
+
         # Plot biomass (X)
-        axs[0].plot(dataset['times'], dataset['X_true'], 'bo-', label='Measured')
+        axs[0].plot(times_X, X_true, 'bo-', label='Measured')
         axs[0].plot(solution['times'], solution['X'], 'r-', label='Predicted')
         axs[0].set_title(f'Dataset {i + 1}: Biomass (CDW g/L)')
         axs[0].set_xlabel('Time (h)')
@@ -305,7 +317,7 @@ def plot_results(model, datasets, history, output_dir="results"):
         axs[0].grid(True)
 
         # Plot product (P)
-        axs[1].plot(dataset['times'], dataset['P_true'], 'bo-', label='Measured')
+        axs[1].plot(times_P, P_true, 'bo-', label='Measured')
         axs[1].plot(solution['times'], solution['P'], 'r-', label='Predicted')
         axs[1].set_title(f'Dataset {i + 1}: Product (g/L)')
         axs[1].set_xlabel('Time (h)')
@@ -321,8 +333,6 @@ def plot_results(model, datasets, history, output_dir="results"):
 # =============================================
 # MAIN FUNCTION
 # =============================================
-
-
 
 def main():
     # Load data
@@ -356,7 +366,6 @@ def main():
     except Exception as e:
         print(f"Error during training: {type(e).__name__}: {e}")
         import traceback
-
         traceback.print_exc()
         print("\nFalling back to returning the untrained model")
         history = {"loss": [], "aux": []}
@@ -374,21 +383,29 @@ def main():
         # Get predictions
         solution = solve_for_dataset(trained_model, dataset)
 
-        # Calculate metrics
-        X_metrics = calculate_metrics(dataset['X_true'], solution['X'])
-        P_metrics = calculate_metrics(dataset['P_true'], solution['P'])
+        # Make sure arrays have the same length
+        if 'X_true' in dataset and 'P_true' in dataset:
+            min_len_x = min(len(solution['X']), len(dataset['X_true']))
+            min_len_p = min(len(solution['P']), len(dataset['P_true']))
 
-        evaluation[f"dataset_{i}"] = {
-            'X': X_metrics,
-            'P': P_metrics
-        }
+            # Calculate metrics
+            X_metrics = calculate_metrics(dataset['X_true'][:min_len_x], solution['X'][:min_len_x])
+            P_metrics = calculate_metrics(dataset['P_true'][:min_len_p], solution['P'][:min_len_p])
 
-        print(f"Dataset {i + 1}:")
-        print(f"  X - R²: {X_metrics['r2']:.4f}, RMSE: {X_metrics['rmse']:.4f}")
-        print(f"  P - R²: {P_metrics['r2']:.4f}, RMSE: {P_metrics['rmse']:.4f}")
+            evaluation[f"dataset_{i}"] = {
+                'X': X_metrics,
+                'P': P_metrics
+            }
+
+            print(f"Dataset {i + 1}:")
+            print(f"  X - R²: {X_metrics['r2']:.4f}, RMSE: {X_metrics['rmse']:.4f}")
+            print(f"  P - R²: {P_metrics['r2']:.4f}, RMSE: {P_metrics['rmse']:.4f}")
+        else:
+            print(f"Dataset {i + 1}: Missing true values, skipping evaluation")
 
     print("Process complete!")
     return trained_model, training_datasets, history
+
 
 if __name__ == "__main__":
     main()

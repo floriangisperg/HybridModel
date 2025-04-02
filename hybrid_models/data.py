@@ -476,105 +476,78 @@ class TimeSeriesData:
         return all_inputs
 
     def prepare_for_training(self) -> Dict:
-        """ Prepare the dataset for training by converting to the format expected by the training functions.
+        """
+        Prepare the dataset for training by converting to the format
+        expected by the training functions.
         """
         # Get initial state
-        initial_state = self.get_initial_state()  # [cite: 158]
+        initial_state = self.get_initial_state()
 
         # Prepare time-dependent inputs
-        time_dependent_inputs = {}  # [cite: 158]
+        time_dependent_inputs = {}
+
         # Add control variables
-        for name, values in self.control_variables.items():  # [cite: 158]
-            time_dependent_inputs[name] = (self.time_points, values)  # [cite: 158]
+        for name, values in self.control_variables.items():
+            time_dependent_inputs[name] = (self.time_points, values)
+
         # Add feed variables
-        for name, values in self.feed_variables.items():  # [cite: 158]
-            time_dependent_inputs[name] = (self.time_points, values)  # [cite: 158]
+        for name, values in self.feed_variables.items():
+            time_dependent_inputs[name] = (self.time_points, values)
 
         # Prepare static inputs (parameters)
-        static_inputs = {**self.parameter_variables}  # [cite: 158]
+        static_inputs = {**self.parameter_variables}
 
-        # Prepare dataset dictionary *without* run_id
+        # Prepare dataset
         dataset = {
-            'times': self.time_points,  # [cite: 158]
-            'initial_state': initial_state,  # [cite: 158]
-            'time_dependent_inputs': time_dependent_inputs,  # [cite: 158]
-            'static_inputs': static_inputs,  # [cite: 158]
-            # 'run_id': self.run_id  <-- REMOVE THIS LINE
+            'times': self.time_points,
+            'initial_state': initial_state,
+            'time_dependent_inputs': time_dependent_inputs,
+            'static_inputs': static_inputs
+            # Remove run_id to avoid JAX jit compilation issues
         }
 
         # Add true outputs for loss calculation
-        for name, values in self.output_variables.items():  # [cite: 158]
-            dataset[f'{name}_true'] = values  # [cite: 158]
-        return dataset  # [cite: 158]
+        for name, values in self.output_variables.items():
+            dataset[f'{name}_true'] = values
+
+        return dataset
 
     @classmethod
-    def load_datasets_from_dataframe(cls,
-                                     df: pd.DataFrame,
-                                     time_column: str,
-                                     run_id_column: str,
+    def load_datasets_from_dataframe(cls, df: pd.DataFrame, time_column: str,
+                                     run_id_column: Optional[str] = None,
                                      max_runs: Optional[int] = None) -> List['TimeSeriesData']:
         """
-        Load multiple time-series datasets from a single Pandas DataFrame.
+        Load multiple datasets from a DataFrame, splitting by run ID.
 
         Args:
-            df: Pandas DataFrame containing the data.
-            time_column: Name of the column containing time points.
-            run_id_column: Name of the column identifying different runs/experiments.
-            max_runs: Maximum number of runs to load. Loads all if None.
+            df: DataFrame containing the data
+            time_column: Name of the time column
+            run_id_column: Column that contains run IDs
+            max_runs: Maximum number of runs to load
 
         Returns:
-            A list of TimeSeriesData objects.
+            List of TimeSeriesData objects
         """
-        all_run_ids = df[run_id_column].unique()
-        run_ids_to_load = all_run_ids[:max_runs] if max_runs is not None else all_run_ids
-
         datasets = []
-        for run_id in run_ids_to_load:
-            # Filter for the specific run AND SORT BY TIME COLUMN
-            run_data = df[df[run_id_column] == run_id].sort_values(by=time_column)  # <-- ADD SORTING HERE
 
-            if run_data.empty:
-                print(f"Warning: No data found for RunID {run_id}. Skipping.")
-                continue
+        if run_id_column is not None and run_id_column in df.columns:
+            # Get unique run IDs
+            run_ids = df[run_id_column].unique()
 
-            dataset = cls(run_id=str(run_id))
-            dataset.set_time_p(run_data[time_column])  # Set time points first
+            # Limit to max_runs if specified
+            if max_runs is not None:
+                run_ids = run_ids[:max_runs]
 
-            # Auto-detect columns that are not time or run_id? Or require explicit adding?
-            # For now, assuming variables need to be added manually after loading
-            # You'll need to call dataset.add_variable(...) based on your bioprocess.txt logic
-
+            # Create a dataset for each run
+            for run_id in run_ids:
+                dataset = cls(run_id=str(run_id))
+                dataset.from_dataframe(df, time_column, run_id_column, run_id)
+                datasets.append(dataset)
+        else:
+            # If no run ID column, treat the entire dataset as a single run
+            dataset = cls()
+            dataset.from_dataframe(df, time_column)
             datasets.append(dataset)
-
-        # Now, iterate through the created datasets and add the specific variables
-        # (This part needs to be adapted based on how you define variables in bioprocess.txt)
-        # Example structure (needs to match your bioprocess.txt loading logic):
-        variable_definitions = {
-            # Example: 'Excel Column Name': (VariableType.STATE, 'Internal Name')
-            'CDW(g/L)': (VariableType.STATE, 'X'),
-            'Product(g/L)': (VariableType.STATE, 'P'),
-            'Substrate(g/L)': (VariableType.STATE, 'S'),
-            'Temp(C)': (VariableType.CONTROL, 'T'),
-            'pH': (VariableType.CONTROL, 'pH'),
-            'Feed_Rate(L/h)': (VariableType.FEED, 'F'),
-            # Add other variables as defined in your bioprocess script
-        }
-
-        for dataset in datasets:
-            run_id = dataset.run_id
-            # Filter and sort again to ensure alignment when adding variables
-            run_data_for_vars = df[df[run_id_column] == run_id].sort_values(by=time_column)  # <-- SORT AGAIN
-
-            for column_name, (var_type, internal_name) in variable_definitions.items():
-                if column_name in run_data_for_vars:
-                    dataset.add_variable(
-                        internal_name,
-                        var_type,
-                        run_data_for_vars[column_name],
-                        column_name  # Pass original column name if needed
-                    )
-                else:
-                    print(f"Warning: Column '{column_name}' not found for RunID {run_id}.")
 
         return datasets
 
