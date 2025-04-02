@@ -6,113 +6,77 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple
 import os
-from jaxtyping import Array, Float
 
-# Import our framework (assuming it's installed or in the same directory)
+# Import our framework
 from hybrid_models import (
     HybridModelBuilder,
     train_hybrid_model,
     evaluate_hybrid_model,
-    calculate_metrics,  # Import the function directly
-    normalize_data,
-    calculate_rate,
+    calculate_metrics,
     create_initial_random_key
 )
+
+# Import our new data module
+from hybrid_models.data import DatasetManager, VariableType
 
 
 # =============================================
 # DATA LOADING AND PREPROCESSING
 # =============================================
 
-def load_bioprocess_data(file_path, run_ids=None, max_runs=2):
-    """Load bioprocess experimental data."""
+def load_bioprocess_data(file_path, train_run_ids=None, test_run_ids=None, train_ratio=0.8):
+    """
+    Load bioprocess experimental data using the new DatasetManager.
+
+    Args:
+        file_path: Path to Excel file with data
+        train_run_ids: Specific run IDs to use for training (optional)
+        test_run_ids: Specific run IDs to use for testing (optional)
+        train_ratio: Ratio of runs to use for training if specific IDs not provided
+
+    Returns:
+        DatasetManager object with loaded data
+    """
     # Load data from Excel file
     data = pd.read_excel(file_path)
 
-    # Get run IDs
-    all_run_ids = data['RunID'].unique()
+    # Create dataset manager
+    manager = DatasetManager()
 
-    # Use specified run IDs or first max_runs
-    if run_ids is None:
-        run_ids = all_run_ids[:max_runs]
+    # Load data with train/test split
+    manager.load_from_dataframe(
+        df=data,
+        time_column='feedtimer(h)',
+        run_id_column='RunID',
+        train_run_ids=train_run_ids,
+        test_run_ids=test_run_ids,
+        train_ratio=train_ratio
+    )
 
-    # Process each run
-    runs = []
-    for run_id in run_ids:
-        # Filter for the specified run
-        run_data = data[data['RunID'] == run_id].sort_values('feedtimer(h)')
+    # Define variables to load
+    variable_definitions = [
+        # State variables (output variables)
+        ('CDW(g/L)', VariableType.STATE, 'X', True, False),
+        ('Produktsol(g/L)', VariableType.STATE, 'P', True, False),
 
-        # Extract state measurements
-        states_df = run_data[['feedtimer(h)', 'CDW(g/L)', 'Produktsol(g/L)']].dropna()
-        states_times = jnp.array(states_df['feedtimer(h)'].values)
-        X = jnp.array(states_df['CDW(g/L)'].values)
-        P = jnp.array(states_df['Produktsol(g/L)'].values)
+        # Control variables
+        ('Temp(°C)', VariableType.CONTROL, 'temp', False, False),
+        ('InductorMASS(mg)', VariableType.CONTROL, 'inductor_mass', False, False),
+        ('Inductor(yesno)', VariableType.CONTROL, 'inductor_switch', False, False),
 
-        # Extract control inputs
-        controls_df = run_data[['feedtimer(h)', 'Temp(°C)', 'Feed(L)', 'InductorMASS(mg)',
-                                'Inductor(yesno)', 'Base(L)', 'Reaktorvolumen(L)']]
+        # Feed variables (with rate calculation)
+        ('Feed(L)', VariableType.FEED, 'feed', False, True),
+        ('Base(L)', VariableType.FEED, 'base', False, True),
+        ('Reaktorvolumen(L)', VariableType.CONTROL, 'reactor_volume', False, False),
+    ]
 
-        # Handle potential NaN values by forward-filling
-        controls_df = controls_df.ffill()
+    # Add variables to datasets
+    manager.add_variables(variable_definitions, data)
 
-        # Get inducer switch: 0 for no induction, 1 for induction
-        controls_df['Iy/n'] = controls_df['Inductor(yesno)'].astype(int)
+    # Calculate normalization parameters (only from training data)
+    manager.calculate_norm_params()
 
-        # Convert to JAX arrays
-        controls_times = jnp.array(controls_df['feedtimer(h)'].values)
-        temp = jnp.array(controls_df['Temp(°C)'].values)
-        feed = jnp.array(controls_df['Feed(L)'].values)
-        inductor_mass = jnp.array(controls_df['InductorMASS(mg)'].values)
-        inductor_switch = jnp.array(controls_df['Iy/n'].values)
-        base = jnp.array(controls_df['Base(L)'].values)
-        reactor_volume = jnp.array(controls_df['Reaktorvolumen(L)'].values)
-
-        # Create processed run data
-        runs.append({
-            'run_id': run_id,
-            'states_times': states_times,
-            'X': X,
-            'P': P,
-            'controls_times': controls_times,
-            'temp': temp,
-            'feed': feed,
-            'inductor_mass': inductor_mass,
-            'inductor_switch': inductor_switch,
-            'base': base,
-            'reactor_volume': reactor_volume
-        })
-
-    # Calculate normalization parameters from all runs
-    all_X = jnp.concatenate([run['X'] for run in runs])
-    all_P = jnp.concatenate([run['P'] for run in runs])
-    all_temp = jnp.concatenate([run['temp'] for run in runs])
-    all_feed = jnp.concatenate([run['feed'] for run in runs])
-    all_inductor_mass = jnp.concatenate([run['inductor_mass'] for run in runs])
-    all_base = jnp.concatenate([run['base'] for run in runs])
-    all_reactor_volume = jnp.concatenate([run['reactor_volume'] for run in runs])
-
-    norm_params = {
-        'X_mean': float(all_X.mean()),
-        'X_std': float(all_X.std()),
-        'P_mean': float(all_P.mean()),
-        'P_std': float(all_P.std()),
-        'temp_mean': float(all_temp.mean()),
-        'temp_std': float(all_temp.std()),
-        'feed_mean': float(all_feed.mean()),
-        'feed_std': float(all_feed.std()),
-        'inductor_mass_mean': float(all_inductor_mass.mean()),
-        'inductor_mass_std': float(all_inductor_mass.std()),
-        'base_mean': float(all_base.mean()),
-        'base_std': float(all_base.std()),
-        'reactor_volume_mean': float(all_reactor_volume.mean()),
-        'reactor_volume_std': float(all_reactor_volume.std()),
-    }
-
-    # Add norm_params to each run
-    for run in runs:
-        run['norm_params'] = norm_params
-
-    return runs
+    return manager
 
 
 # =============================================
@@ -121,7 +85,6 @@ def load_bioprocess_data(file_path, run_ids=None, max_runs=2):
 
 def define_bioprocess_model(norm_params):
     """Define the bioprocess model components."""
-
     # Create model builder
     builder = HybridModelBuilder()
 
@@ -207,44 +170,6 @@ def define_bioprocess_model(norm_params):
 
 
 # =============================================
-# PREPARE DATASET FOR TRAINING
-# =============================================
-
-def prepare_bioprocess_dataset(runs):
-    """Prepare datasets for training."""
-    datasets = []
-
-    for run in runs:
-        # Calculate feed and base rates
-        feed_rate = calculate_rate(run['controls_times'], run['feed'])
-        base_rate = calculate_rate(run['controls_times'], run['base'])
-
-        # Create dataset for this run
-        dataset = {
-            'X_true': run['X'],
-            'P_true': run['P'],
-            'times': run['states_times'],
-            'initial_state': {
-                'X': run['X'][0],
-                'P': run['P'][0]
-            },
-            'time_dependent_inputs': {
-                'temp': (run['controls_times'], run['temp']),
-                'feed': (run['controls_times'], run['feed']),
-                'inductor_mass': (run['controls_times'], run['inductor_mass']),
-                'inductor_switch': (run['controls_times'], run['inductor_switch']),
-                'reactor_volume': (run['controls_times'], run['reactor_volume']),
-                'feed_rate': (run['controls_times'], feed_rate),
-                'base_rate': (run['controls_times'], base_rate)
-            }
-        }
-
-        datasets.append(dataset)
-
-    return datasets
-
-
-# =============================================
 # DEFINE LOSS FUNCTION
 # =============================================
 
@@ -261,7 +186,8 @@ def bioprocess_loss_function(model, datasets):
             t_span=(dataset['times'][0], dataset['times'][-1]),
             evaluation_times=dataset['times'],
             args={
-                'time_dependent_inputs': dataset['time_dependent_inputs']
+                'time_dependent_inputs': dataset['time_dependent_inputs'],
+                'static_inputs': dataset.get('static_inputs', {})
             },
             max_steps=100000,
             rtol=1e-2,  # Slightly relaxed tolerance
@@ -299,7 +225,8 @@ def solve_for_dataset(model, dataset):
         t_span=(dataset['times'][0], dataset['times'][-1]),
         evaluation_times=dataset['times'],
         args={
-            'time_dependent_inputs': dataset['time_dependent_inputs']
+            'time_dependent_inputs': dataset['time_dependent_inputs'],
+            'static_inputs': dataset.get('static_inputs', {})
         },
         max_steps=100000,
         rtol=1e-2,  # Slightly relaxed tolerance
@@ -313,8 +240,17 @@ def solve_for_dataset(model, dataset):
 # PLOT RESULTS
 # =============================================
 
-def plot_results(model, datasets, history, output_dir="results"):
-    """Plot training results and predictions."""
+def plot_results(model, train_datasets, test_datasets, history, output_dir="results"):
+    """
+    Plot training results and predictions for both training and test datasets.
+
+    Args:
+        model: Trained hybrid model
+        train_datasets: List of training datasets
+        test_datasets: List of test datasets
+        history: Training history
+        output_dir: Directory to save plots
+    """
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
 
@@ -342,18 +278,16 @@ def plot_results(model, datasets, history, output_dir="results"):
     plt.savefig(os.path.join(output_dir, 'component_losses.png'))
     plt.close()
 
-    # Plot predictions for each dataset
-    for i, dataset in enumerate(datasets):
-        # Get predictions
+    # Plot predictions for training datasets
+    for i, dataset in enumerate(train_datasets):
         solution = solve_for_dataset(model, dataset)
 
-        # Create plots
         fig, axs = plt.subplots(2, 1, figsize=(10, 12))
 
         # Plot biomass (X)
         axs[0].plot(dataset['times'], dataset['X_true'], 'bo-', label='Measured')
         axs[0].plot(solution['times'], solution['X'], 'r-', label='Predicted')
-        axs[0].set_title(f'Dataset {i + 1}: Biomass (CDW g/L)')
+        axs[0].set_title(f'Training Dataset {i + 1}: Biomass (CDW g/L)')
         axs[0].set_xlabel('Time (h)')
         axs[0].set_ylabel('CDW (g/L)')
         axs[0].legend()
@@ -362,15 +296,81 @@ def plot_results(model, datasets, history, output_dir="results"):
         # Plot product (P)
         axs[1].plot(dataset['times'], dataset['P_true'], 'bo-', label='Measured')
         axs[1].plot(solution['times'], solution['P'], 'r-', label='Predicted')
-        axs[1].set_title(f'Dataset {i + 1}: Product (g/L)')
+        axs[1].set_title(f'Training Dataset {i + 1}: Product (g/L)')
         axs[1].set_xlabel('Time (h)')
         axs[1].set_ylabel('Product (g/L)')
         axs[1].legend()
         axs[1].grid(True)
 
         plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, f'dataset_{i + 1}_predictions.png'))
+        plt.savefig(os.path.join(output_dir, f'train_dataset_{i + 1}_predictions.png'))
         plt.close()
+
+    # Plot predictions for test datasets
+    for i, dataset in enumerate(test_datasets):
+        solution = solve_for_dataset(model, dataset)
+
+        fig, axs = plt.subplots(2, 1, figsize=(10, 12))
+
+        # Plot biomass (X)
+        axs[0].plot(dataset['times'], dataset['X_true'], 'bo-', label='Measured')
+        axs[0].plot(solution['times'], solution['X'], 'r-', label='Predicted')
+        axs[0].set_title(f'Test Dataset {i + 1}: Biomass (CDW g/L)')
+        axs[0].set_xlabel('Time (h)')
+        axs[0].set_ylabel('CDW (g/L)')
+        axs[0].legend()
+        axs[0].grid(True)
+
+        # Plot product (P)
+        axs[1].plot(dataset['times'], dataset['P_true'], 'bo-', label='Measured')
+        axs[1].plot(solution['times'], solution['P'], 'r-', label='Predicted')
+        axs[1].set_title(f'Test Dataset {i + 1}: Product (g/L)')
+        axs[1].set_xlabel('Time (h)')
+        axs[1].set_ylabel('Product (g/L)')
+        axs[1].legend()
+        axs[1].grid(True)
+
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, f'test_dataset_{i + 1}_predictions.png'))
+        plt.close()
+
+
+# =============================================
+# EVALUATE MODEL
+# =============================================
+
+def evaluate_model(model, datasets, dataset_type="training"):
+    """
+    Evaluate model performance on datasets.
+
+    Args:
+        model: Trained hybrid model
+        datasets: List of datasets to evaluate
+        dataset_type: String to identify dataset type in output
+
+    Returns:
+        Dictionary of evaluation metrics
+    """
+    evaluation = {}
+
+    for i, dataset in enumerate(datasets):
+        # Get predictions
+        solution = solve_for_dataset(model, dataset)
+
+        # Calculate metrics
+        X_metrics = calculate_metrics(dataset['X_true'], solution['X'])
+        P_metrics = calculate_metrics(dataset['P_true'], solution['P'])
+
+        evaluation[f"{dataset_type}_dataset_{i}"] = {
+            'X': X_metrics,
+            'P': P_metrics
+        }
+
+        print(f"{dataset_type.capitalize()} Dataset {i + 1}:")
+        print(f"  X - R²: {X_metrics['r2']:.4f}, RMSE: {X_metrics['rmse']:.4f}")
+        print(f"  P - R²: {P_metrics['r2']:.4f}, RMSE: {P_metrics['rmse']:.4f}")
+
+    return evaluation
 
 
 # =============================================
@@ -378,30 +378,37 @@ def plot_results(model, datasets, history, output_dir="results"):
 # =============================================
 
 def main():
-    # Load data
+    # Load data with train/test split
     print("Loading data...")
-    runs = load_bioprocess_data('Train_data_masked.xlsx')
-    print(f"Loaded {len(runs)} runs")
+    data_manager = load_bioprocess_data(
+        'Train_data_masked.xlsx',
+        train_run_ids=["58","61"],  # Use default train/test split
+        test_run_ids=None,
+        train_ratio=0.8
+    )
 
-    # Get normalization parameters from the first run (they're the same for all runs)
-    norm_params = runs[0]['norm_params']
+    print(f"Loaded {len(data_manager.train_datasets)} training datasets and "
+          f"{len(data_manager.test_datasets)} test datasets")
+
+    # Get normalization parameters from training data only
+    norm_params = data_manager.norm_params
+
+    # Prepare datasets for training
+    train_datasets = data_manager.prepare_training_data()
+    test_datasets = data_manager.prepare_test_data()
 
     # Build model
     print("Building hybrid model...")
     model = define_bioprocess_model(norm_params)
-
-    # Prepare datasets
-    print("Preparing datasets...")
-    datasets = prepare_bioprocess_dataset(runs)
 
     # Train model with error handling
     print("Training model...")
     try:
         trained_model, history = train_hybrid_model(
             model=model,
-            datasets=datasets,
+            datasets=train_datasets,
             loss_fn=bioprocess_loss_function,
-            num_epochs=500,  # Reduced for demonstration
+            num_epochs=500,
             learning_rate=1e-3,
             early_stopping_patience=50
         )
@@ -416,31 +423,19 @@ def main():
 
     # Plot results
     print("Plotting results...")
-    plot_results(trained_model, datasets, history, "bioprocess_results")
+    plot_results(trained_model, train_datasets, test_datasets, history, "bioprocess_results")
 
-    # Evaluate model
-    print("Evaluating model...")
-    evaluation = {}
+    # Evaluate model on training data
+    print("\nEvaluating model on training data...")
+    train_evaluation = evaluate_model(trained_model, train_datasets, "training")
 
-    for i, dataset in enumerate(datasets):
-        # Get predictions
-        solution = solve_for_dataset(trained_model, dataset)
-
-        # Calculate metrics
-        X_metrics = calculate_metrics(dataset['X_true'], solution['X'])
-        P_metrics = calculate_metrics(dataset['P_true'], solution['P'])
-
-        evaluation[f"dataset_{i}"] = {
-            'X': X_metrics,
-            'P': P_metrics
-        }
-
-        print(f"Dataset {i + 1}:")
-        print(f"  X - R²: {X_metrics['r2']:.4f}, RMSE: {X_metrics['rmse']:.4f}")
-        print(f"  P - R²: {P_metrics['r2']:.4f}, RMSE: {P_metrics['rmse']:.4f}")
+    # Evaluate model on test data
+    if test_datasets:
+        print("\nEvaluating model on test data...")
+        test_evaluation = evaluate_model(trained_model, test_datasets, "test")
 
     print("Process complete!")
-    return trained_model, datasets, history
+    return trained_model, train_datasets, test_datasets, history
 
 
 if __name__ == "__main__":
