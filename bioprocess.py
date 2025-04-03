@@ -249,8 +249,8 @@ def main():
     print("Loading data...")
     data_manager = load_bioprocess_data(
         'Train_data_masked.xlsx',
-        train_run_ids=[58, 61, 53, 96],
-        test_run_ids=[63, 101],
+        train_run_ids=None, #[58, 61, 53, 96],
+        test_run_ids=None, #[63, 101],
         train_ratio=0.8
     )
 
