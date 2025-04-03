@@ -151,16 +151,16 @@ def define_bioprocess_model(norm_params):
     # Replace growth rate with neural network
     builder.replace_with_nn(
         name='growth_rate',
-        input_features=['X', 'P', 'temp', 'feed', 'inductor_mass', 'inductor_switch'],
-        hidden_dims=[8, 8],  # Smaller network
+        input_features=['X', 'P', 'temp', 'feed', 'inductor_mass',],
+        hidden_dims=[32, 32],  # Smaller network
         key=key1
     )
 
     # Replace product formation rate with neural network
     builder.replace_with_nn(
         name='product_rate',
-        input_features=['X', 'P', 'temp', 'feed', 'inductor_mass', 'inductor_switch'],
-        hidden_dims=[8, 8],  # Smaller network
+        input_features=['X', 'P', 'temp', 'feed', 'inductor_mass',],
+        hidden_dims=[32, 32],  # Smaller network
         output_activation=jax.nn.softplus,  # Ensure non-negative rate
         key=key2
     )
@@ -382,9 +382,9 @@ def main():
     print("Loading data...")
     data_manager = load_bioprocess_data(
         'Train_data_masked.xlsx',
-        train_run_ids=[58, 61, 53 ],
-        test_run_ids=[63, 101],
-        train_ratio=0.8
+        train_run_ids=None,#[58, 61, 53 ],
+        test_run_ids=None,#[63, 101],
+        train_ratio=0.6
     )
 
     print(f"Loaded {len(data_manager.train_datasets)} training datasets and "
@@ -408,9 +408,9 @@ def main():
             model=model,
             datasets=train_datasets,
             loss_fn=bioprocess_loss_function,
-            num_epochs=500,
+            num_epochs=10000,
             learning_rate=1e-3,
-            early_stopping_patience=50
+            early_stopping_patience=800
         )
         print("Training complete")
     except Exception as e:
