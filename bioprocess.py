@@ -16,7 +16,11 @@ from hybrid_models import (
     create_initial_random_key
 )
 
-# Import our new data module
+# Import our new modules
+from hybrid_models.visualization import plot_all_results
+from hybrid_models.evaluation_utils import evaluate_model_performance
+
+# Import our data module
 from hybrid_models.data import DatasetManager, VariableType
 
 
@@ -237,143 +241,6 @@ def solve_for_dataset(model, dataset):
 
 
 # =============================================
-# PLOT RESULTS
-# =============================================
-
-def plot_results(model, train_datasets, test_datasets, history, output_dir="results"):
-    """
-    Plot training results and predictions for both training and test datasets.
-
-    Args:
-        model: Trained hybrid model
-        train_datasets: List of training datasets
-        test_datasets: List of test datasets
-        history: Training history
-        output_dir: Directory to save plots
-    """
-    # Create output directory
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Plot training history
-    plt.figure(figsize=(10, 6))
-    plt.plot(history['loss'], 'b-')
-    plt.title('Training Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.grid(True)
-    plt.savefig(os.path.join(output_dir, 'training_loss.png'))
-    plt.close()
-
-    # Plot component losses
-    plt.figure(figsize=(10, 6))
-    x_losses = [aux[0] for aux in history['aux']]
-    p_losses = [aux[1] for aux in history['aux']]
-    plt.plot(x_losses, 'g-', label='X Loss')
-    plt.plot(p_losses, 'r-', label='P Loss')
-    plt.title('Component Losses')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(os.path.join(output_dir, 'component_losses.png'))
-    plt.close()
-
-    # Plot predictions for training datasets
-    for i, dataset in enumerate(train_datasets):
-        solution = solve_for_dataset(model, dataset)
-
-        fig, axs = plt.subplots(2, 1, figsize=(10, 12))
-
-        # Plot biomass (X)
-        axs[0].plot(dataset['times'], dataset['X_true'], 'bo-', label='Measured')
-        axs[0].plot(solution['times'], solution['X'], 'r-', label='Predicted')
-        axs[0].set_title(f'Training Dataset {i + 1}: Biomass (CDW g/L)')
-        axs[0].set_xlabel('Time (h)')
-        axs[0].set_ylabel('CDW (g/L)')
-        axs[0].legend()
-        axs[0].grid(True)
-
-        # Plot product (P)
-        axs[1].plot(dataset['times'], dataset['P_true'], 'bo-', label='Measured')
-        axs[1].plot(solution['times'], solution['P'], 'r-', label='Predicted')
-        axs[1].set_title(f'Training Dataset {i + 1}: Product (g/L)')
-        axs[1].set_xlabel('Time (h)')
-        axs[1].set_ylabel('Product (g/L)')
-        axs[1].legend()
-        axs[1].grid(True)
-
-        plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, f'train_dataset_{i + 1}_predictions.png'))
-        plt.close()
-
-    # Plot predictions for test datasets
-    for i, dataset in enumerate(test_datasets):
-        solution = solve_for_dataset(model, dataset)
-
-        fig, axs = plt.subplots(2, 1, figsize=(10, 12))
-
-        # Plot biomass (X)
-        axs[0].plot(dataset['times'], dataset['X_true'], 'bo-', label='Measured')
-        axs[0].plot(solution['times'], solution['X'], 'r-', label='Predicted')
-        axs[0].set_title(f'Test Dataset {i + 1}: Biomass (CDW g/L)')
-        axs[0].set_xlabel('Time (h)')
-        axs[0].set_ylabel('CDW (g/L)')
-        axs[0].legend()
-        axs[0].grid(True)
-
-        # Plot product (P)
-        axs[1].plot(dataset['times'], dataset['P_true'], 'bo-', label='Measured')
-        axs[1].plot(solution['times'], solution['P'], 'r-', label='Predicted')
-        axs[1].set_title(f'Test Dataset {i + 1}: Product (g/L)')
-        axs[1].set_xlabel('Time (h)')
-        axs[1].set_ylabel('Product (g/L)')
-        axs[1].legend()
-        axs[1].grid(True)
-
-        plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, f'test_dataset_{i + 1}_predictions.png'))
-        plt.close()
-
-
-# =============================================
-# EVALUATE MODEL
-# =============================================
-
-def evaluate_model(model, datasets, dataset_type="training"):
-    """
-    Evaluate model performance on datasets.
-
-    Args:
-        model: Trained hybrid model
-        datasets: List of datasets to evaluate
-        dataset_type: String to identify dataset type in output
-
-    Returns:
-        Dictionary of evaluation metrics
-    """
-    evaluation = {}
-
-    for i, dataset in enumerate(datasets):
-        # Get predictions
-        solution = solve_for_dataset(model, dataset)
-
-        # Calculate metrics
-        X_metrics = calculate_metrics(dataset['X_true'], solution['X'])
-        P_metrics = calculate_metrics(dataset['P_true'], solution['P'])
-
-        evaluation[f"{dataset_type}_dataset_{i}"] = {
-            'X': X_metrics,
-            'P': P_metrics
-        }
-
-        print(f"{dataset_type.capitalize()} Dataset {i + 1}:")
-        print(f"  X - R²: {X_metrics['r2']:.4f}, RMSE: {X_metrics['rmse']:.4f}")
-        print(f"  P - R²: {P_metrics['r2']:.4f}, RMSE: {P_metrics['rmse']:.4f}")
-
-    return evaluation
-
-
-# =============================================
 # MAIN FUNCTION
 # =============================================
 
@@ -382,7 +249,7 @@ def main():
     print("Loading data...")
     data_manager = load_bioprocess_data(
         'Train_data_masked.xlsx',
-        train_run_ids=[58, 61, 53 ],
+        train_run_ids=[58, 61, 53, 96],
         test_run_ids=[63, 101],
         train_ratio=0.8
     )
@@ -408,9 +275,9 @@ def main():
             model=model,
             datasets=train_datasets,
             loss_fn=bioprocess_loss_function,
-            num_epochs=500,
-            learning_rate=1e-3,
-            early_stopping_patience=50
+            num_epochs=2000,
+            learning_rate=5e-4,
+            early_stopping_patience=200
         )
         print("Training complete")
     except Exception as e:
@@ -421,18 +288,37 @@ def main():
         history = {"loss": [], "aux": []}
         trained_model = model
 
-    # Plot results
+    # Use our new visualization module to plot results
     print("Plotting results...")
-    plot_results(trained_model, train_datasets, test_datasets, history, "bioprocess_results")
+    plot_all_results(
+        model=trained_model,
+        train_datasets=train_datasets,
+        test_datasets=test_datasets,
+        history=history,
+        solve_fn=solve_for_dataset,
+        state_names=['X', 'P'],
+        output_dir="bioprocess_results",
+        state_labels={'X': 'Biomass (CDW g/L)', 'P': 'Product (g/L)'}
+    )
 
-    # Evaluate model on training data
-    print("\nEvaluating model on training data...")
-    train_evaluation = evaluate_model(trained_model, train_datasets, "training")
+    # Use our new evaluation module to evaluate the model
+    print("\nEvaluating model...")
+    train_evaluation = evaluate_model_performance(
+        model=trained_model,
+        datasets=train_datasets,
+        solve_fn=solve_for_dataset,
+        state_names=['X', 'P'],
+        dataset_type="Training"
+    )
 
-    # Evaluate model on test data
     if test_datasets:
-        print("\nEvaluating model on test data...")
-        test_evaluation = evaluate_model(trained_model, test_datasets, "test")
+        test_evaluation = evaluate_model_performance(
+            model=trained_model,
+            datasets=test_datasets,
+            solve_fn=solve_for_dataset,
+            state_names=['X', 'P'],
+            dataset_type="Test"
+        )
 
     print("Process complete!")
     return trained_model, train_datasets, test_datasets, history
