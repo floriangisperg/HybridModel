@@ -4,6 +4,7 @@ Evaluation utilities for hybrid models.
 This module extends the basic evaluation functionality with reporting, aggregation,
 and model comparison capabilities.
 """
+import os
 
 import jax.numpy as jnp
 from typing import Dict, List, Any, Callable, Optional, Tuple, Union
@@ -13,11 +14,14 @@ import numpy as np
 
 
 def evaluate_model_performance(model: Any,
-                               datasets: List[Dict],
-                               solve_fn: Callable,
-                               state_names: Optional[List[str]] = None,
-                               dataset_type: str = "Dataset",
-                               verbose: bool = True) -> Dict[str, Dict[str, Dict[str, float]]]:
+                              datasets: List[Dict],
+                              solve_fn: Callable,
+                              state_names: Optional[List[str]] = None,
+                              dataset_type: str = "Dataset",
+                              verbose: bool = True,
+                              save_metrics: bool = False,
+                              output_dir: str = "results",
+                              metrics_filename: str = "model_metrics.txt") -> Dict[str, Dict[str, Dict[str, float]]]:
     """
     Evaluate model performance on multiple datasets and state variables.
 
@@ -28,11 +32,20 @@ def evaluate_model_performance(model: Any,
         state_names: Optional list of state variables to evaluate (if None, discovers from datasets)
         dataset_type: String to identify dataset type in output
         verbose: Whether to print evaluation results
+        save_metrics: Whether to save metrics to a text file
+        output_dir: Directory to save metrics
+        metrics_filename: Filename for the metrics text file
 
     Returns:
         Nested dictionary of evaluation metrics by dataset and state variable
     """
     evaluation = {}
+
+    # Create output directory if saving metrics
+    if save_metrics:
+        os.makedirs(output_dir, exist_ok=True)
+        metrics_file = open(os.path.join(output_dir, metrics_filename), 'w')
+        metrics_file.write(f"=== {dataset_type} Evaluation Metrics ===\n\n")
 
     # If state_names not provided, discover from datasets
     if state_names is None:
@@ -51,6 +64,11 @@ def evaluate_model_performance(model: Any,
 
         # Calculate metrics for each state
         dataset_metrics = {}
+
+        # Write dataset header to file if saving
+        if save_metrics:
+            metrics_file.write(f"{dataset_type} Dataset {i+1}:\n")
+
         for state_name in state_names:
             true_key = f"{state_name}_true"
             if true_key in dataset and state_name in solution:
@@ -63,12 +81,23 @@ def evaluate_model_performance(model: Any,
 
                 # Print results if verbose
                 if verbose:
-                    print(f"{dataset_type} {i + 1} - {state_name}: "
-                          f"R²: {state_metrics['r2']:.4f}, "
-                          f"RMSE: {state_metrics['rmse']:.4f}")
+                    print(f"{dataset_type} {i+1} - {state_name}: "
+                         f"R²: {state_metrics['r2']:.4f}, "
+                         f"RMSE: {state_metrics['rmse']:.4f}, "
+                         f"MAE: {state_metrics['mae']:.4f}")
+
+                # Write to file if saving
+                if save_metrics:
+                    metrics_file.write(f"  {state_name}:\n")
+                    for metric_name, value in state_metrics.items():
+                        metrics_file.write(f"    {metric_name}: {value:.6f}\n")
 
         # Store metrics for this dataset
         evaluation[f"{dataset_type}_{i}"] = dataset_metrics
+
+        # Add spacing in file
+        if save_metrics:
+            metrics_file.write("\n")
 
     # Calculate aggregate metrics across all datasets
     if len(datasets) > 1:
@@ -80,11 +109,29 @@ def evaluate_model_performance(model: Any,
             for state_name, metrics in aggregate_metrics.items():
                 print(f"{state_name}: R²: {metrics['r2']:.4f}, RMSE: {metrics['rmse']:.4f}")
 
+        # Write aggregate metrics to file
+        if save_metrics:
+            metrics_file.write("=== Aggregate Metrics ===\n")
+            for state_name, metrics in aggregate_metrics.items():
+                metrics_file.write(f"{state_name}:\n")
+                for metric_name, value in metrics.items():
+                    metrics_file.write(f"  {metric_name}: {value:.6f}\n")
+            metrics_file.write("\n")
+
+    # Close file if saving
+    if save_metrics:
+        # Add timestamp
+        from datetime import datetime
+        metrics_file.write(f"Evaluation completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        metrics_file.close()
+        if verbose:
+            print(f"Metrics saved to {os.path.join(output_dir, metrics_filename)}")
+
     return evaluation
 
 
 def aggregate_evaluation_results(evaluation: Dict[str, Dict[str, Dict[str, float]]],
-                                 method: str = 'mean') -> Dict[str, Dict[str, float]]:
+                               method: str = 'mean') -> Dict[str, Dict[str, float]]:
     """
     Aggregate evaluation results across multiple datasets.
 
@@ -131,7 +178,7 @@ def aggregate_evaluation_results(evaluation: Dict[str, Dict[str, Dict[str, float
 
 
 def create_metrics_summary(evaluation: Dict[str, Dict[str, Dict[str, float]]],
-                           format_type: str = 'dataframe') -> Union[pd.DataFrame, Dict]:
+                          format_type: str = 'dataframe') -> Union[pd.DataFrame, Dict]:
     """
     Create a summary of evaluation metrics in different formats.
 
@@ -177,11 +224,11 @@ def create_metrics_summary(evaluation: Dict[str, Dict[str, Dict[str, float]]],
 
 
 def compare_models(models: List[Any],
-                   model_names: List[str],
-                   datasets: List[Dict],
-                   solve_fn: Callable,
-                   state_names: Optional[List[str]] = None,
-                   dataset_type: str = "Dataset") -> pd.DataFrame:
+                  model_names: List[str],
+                  datasets: List[Dict],
+                  solve_fn: Callable,
+                  state_names: Optional[List[str]] = None,
+                  dataset_type: str = "Dataset") -> pd.DataFrame:
     """
     Compare multiple models on the same datasets.
 

@@ -16,6 +16,7 @@ def train_hybrid_model(
         learning_rate: float = 1e-3,
         early_stopping_patience: Optional[int] = None,
         early_stopping_min_delta: float = 1e-5,
+        validation_datasets: Optional[List[Dict]] = None,
         verbose: bool = True
 ):
     """
@@ -29,6 +30,7 @@ def train_hybrid_model(
         learning_rate: Learning rate for the optimizer
         early_stopping_patience: Number of epochs to wait without improvement before stopping
         early_stopping_min_delta: Minimum change to qualify as improvement
+        validation_datasets: Optional list of validation datasets for validation loss tracking
         verbose: Whether to print training progress
 
     Returns:
@@ -59,6 +61,12 @@ def train_hybrid_model(
 
         return params_new, opt_state_new, loss_value, aux
 
+    # Define JIT-compiled validation loss calculation
+    @partial(jax.jit, static_argnums=(1,))
+    def calculate_validation_loss(full_model, loss_fn, validation_datasets):
+        loss_value, aux = loss_fn(full_model, validation_datasets)
+        return loss_value, aux
+
     # Setup for early stopping
     best_loss = float('inf')
     best_params = params
@@ -66,6 +74,7 @@ def train_hybrid_model(
 
     # Training loop
     history = {'loss': [], 'aux': []}
+    validation_history = {'loss': [], 'aux': []} if validation_datasets else None
     start_time = time.time()
 
     for epoch in range(num_epochs):
@@ -76,15 +85,32 @@ def train_hybrid_model(
         history['loss'].append(float(loss_value))
         history['aux'].append(aux)
 
+        # Calculate validation loss if validation datasets provided
+        if validation_datasets:
+            full_model = eqx.combine(params, model_static)
+            val_loss, val_aux = calculate_validation_loss(full_model, loss_fn, validation_datasets)
+            validation_history['loss'].append(float(val_loss))
+            validation_history['aux'].append(val_aux)
+
+            # Use validation loss for early stopping if available
+            monitor_loss = val_loss
+        else:
+            # Otherwise use training loss
+            monitor_loss = loss_value
+
         # Print progress
         if verbose and (epoch % 50 == 0 or epoch == num_epochs - 1):
             elapsed_time = time.time() - start_time
-            print(f"Epoch {epoch}/{num_epochs}, Loss: {loss_value:.4f}, Time: {elapsed_time:.2f}s")
+            progress_msg = f"Epoch {epoch}/{num_epochs}, Loss: {loss_value:.4f}"
+            if validation_datasets:
+                progress_msg += f", Val Loss: {val_loss:.4f}"
+            progress_msg += f", Time: {elapsed_time:.2f}s"
+            print(progress_msg)
 
         # Early stopping check
         if early_stopping_patience is not None:
-            if loss_value < best_loss - early_stopping_min_delta:
-                best_loss = loss_value
+            if monitor_loss < best_loss - early_stopping_min_delta:
+                best_loss = monitor_loss
                 best_params = jax.tree_util.tree_map(lambda x: x.copy() if hasattr(x, 'copy') else x, params)
                 patience_counter = 0
             else:
@@ -103,4 +129,8 @@ def train_hybrid_model(
     else:
         trained_model = eqx.combine(params, model_static)
 
-    return trained_model, history
+    # Return validation history if available
+    if validation_datasets:
+        return trained_model, history, validation_history
+    else:
+        return trained_model, history

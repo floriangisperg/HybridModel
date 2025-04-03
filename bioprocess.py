@@ -248,9 +248,9 @@ def main():
     # Load data with train/test split
     print("Loading data...")
     data_manager = load_bioprocess_data(
-        'Train_data_masked.xlsx',
-        train_run_ids=None, #[58, 61, 53, 96],
-        test_run_ids=None, #[63, 101],
+        'testtrain.xlsx',
+        train_run_ids=None,#[58, 61, 53],
+        test_run_ids=None,#[63, 101],
         train_ratio=0.8
     )
 
@@ -271,14 +271,34 @@ def main():
     # Train model with error handling
     print("Training model...")
     try:
-        trained_model, history = train_hybrid_model(
-            model=model,
-            datasets=train_datasets,
-            loss_fn=bioprocess_loss_function,
-            num_epochs=2000,
-            learning_rate=5e-4,
-            early_stopping_patience=200
-        )
+        # Split data for validation if enough datasets are available
+        if len(train_datasets) > 3:
+            # Use last 20% of train_datasets for validation
+            split_idx = int(len(train_datasets) * 0.8)
+            validation_datasets = train_datasets[split_idx:]
+            main_train_datasets = train_datasets[:split_idx]
+
+            trained_model, history, validation_history = train_hybrid_model(
+                model=model,
+                datasets=main_train_datasets,
+                loss_fn=bioprocess_loss_function,
+                num_epochs=500,
+                learning_rate=1e-3,
+                early_stopping_patience=50,
+                validation_datasets=validation_datasets
+            )
+        else:
+            # Not enough data for validation split
+            trained_model, history = train_hybrid_model(
+                model=model,
+                datasets=train_datasets,
+                loss_fn=bioprocess_loss_function,
+                num_epochs=500,
+                learning_rate=1e-3,
+                early_stopping_patience=50
+            )
+            validation_history = None
+
         print("Training complete")
     except Exception as e:
         print(f"Error during training: {type(e).__name__}: {e}")
@@ -286,6 +306,7 @@ def main():
         traceback.print_exc()
         print("\nFalling back to returning the untrained model")
         history = {"loss": [], "aux": []}
+        validation_history = None
         trained_model = model
 
     # Use our new visualization module to plot results
@@ -298,7 +319,9 @@ def main():
         solve_fn=solve_for_dataset,
         state_names=['X', 'P'],
         output_dir="bioprocess_results",
-        state_labels={'X': 'Biomass (CDW g/L)', 'P': 'Product (g/L)'}
+        state_labels={'X': 'Biomass (CDW g/L)', 'P': 'Product (g/L)'},
+        component_names=['Biomass Loss', 'Product Loss'],
+        validation_history=validation_history
     )
 
     # Use our new evaluation module to evaluate the model
@@ -308,7 +331,10 @@ def main():
         datasets=train_datasets,
         solve_fn=solve_for_dataset,
         state_names=['X', 'P'],
-        dataset_type="Training"
+        dataset_type="Training",
+        save_metrics=True,
+        output_dir="bioprocess_results",
+        metrics_filename="training_metrics.txt"
     )
 
     if test_datasets:
@@ -317,7 +343,10 @@ def main():
             datasets=test_datasets,
             solve_fn=solve_for_dataset,
             state_names=['X', 'P'],
-            dataset_type="Test"
+            dataset_type="Test",
+            save_metrics=True,
+            output_dir="bioprocess_results",
+            metrics_filename="test_metrics.txt"
         )
 
     print("Process complete!")
