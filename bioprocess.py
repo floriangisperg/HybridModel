@@ -248,9 +248,9 @@ def main():
     # Load data with train/test split
     print("Loading data...")
     data_manager = load_bioprocess_data(
-        'testtrain.xlsx',
-        train_run_ids=None,#[58, 61, 53],
-        test_run_ids=None,#[63, 101],
+        'Train_data_masked.xlsx',
+        train_run_ids=[58, 61, 53],
+        test_run_ids=[63, 101],
         train_ratio=0.8
     )
 

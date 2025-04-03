@@ -34,7 +34,7 @@ def train_hybrid_model(
         verbose: Whether to print training progress
 
     Returns:
-        Tuple of (trained_model, training_history)
+        Tuple of (trained_model, training_history) or (trained_model, training_history, validation_history)
     """
     # Split model into trainable and static parts
     model_trainable, model_static = eqx.partition(model, eqx.is_array)
@@ -61,11 +61,13 @@ def train_hybrid_model(
 
         return params_new, opt_state_new, loss_value, aux
 
-    # Define JIT-compiled validation loss calculation
+    # Define function to compute validation loss - properly JIT-compatible
+    # The key is to only pass the trainable parameters and keep model_static separate
     @partial(jax.jit, static_argnums=(1,))
-    def calculate_validation_loss(full_model, loss_fn, validation_datasets):
-        loss_value, aux = loss_fn(full_model, validation_datasets)
-        return loss_value, aux
+    def compute_validation_loss(params, model_static, val_datasets):
+        full_model = eqx.combine(params, model_static)
+        val_loss, val_aux = loss_fn(full_model, val_datasets)
+        return val_loss, val_aux
 
     # Setup for early stopping
     best_loss = float('inf')
@@ -87,8 +89,8 @@ def train_hybrid_model(
 
         # Calculate validation loss if validation datasets provided
         if validation_datasets:
-            full_model = eqx.combine(params, model_static)
-            val_loss, val_aux = calculate_validation_loss(full_model, loss_fn, validation_datasets)
+            # Use the JIT-compiled validation function
+            val_loss, val_aux = compute_validation_loss(params, model_static, validation_datasets)
             validation_history['loss'].append(float(val_loss))
             validation_history['aux'].append(val_aux)
 
