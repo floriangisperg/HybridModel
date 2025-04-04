@@ -321,7 +321,7 @@ def main():
         output_dir="bioprocess_results",
         state_labels={'X': 'Biomass (CDW g/L)', 'P': 'Product (g/L)'},
         component_names=['Biomass Loss', 'Product Loss'],
-        validation_history=validation_history
+        validation_history=validation_history,
     )
 
     # Use our new evaluation module to evaluate the model
