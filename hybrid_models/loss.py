@@ -39,6 +39,33 @@ class MSE(LossMetric):
         return "mse"
 
 
+class NRMSE(LossMetric):
+    """Normalized Root Mean Square Error loss metric."""
+
+    @staticmethod
+    def compute(y_pred, y_true):
+        """
+        Compute the RMSE normalized by the range of the true values.
+
+        This makes the error dimensionless and typically ranges from 0 to 1,
+        with lower values indicating better model performance.
+        """
+        # Calculate MSE
+        mse = jnp.mean(jnp.square(y_pred - y_true))
+        # Calculate RMSE
+        rmse = jnp.sqrt(mse)
+        # Calculate range of true values
+        value_range = jnp.max(y_true) - jnp.min(y_true)
+        # Avoid division by zero
+        safe_range = jnp.where(value_range > 1e-8, value_range, 1.0)
+        # Normalize RMSE by range
+        return rmse / safe_range
+
+    @staticmethod
+    def name():
+        return "nrmse"
+
+
 class RelativeMSE(LossMetric):
     """Relative Mean Squared Error loss metric."""
 

@@ -108,7 +108,7 @@ class HybridODESystem(eqx.Module):
             rtol=1e-3,
             atol=1e-6,
             max_steps=100000,  # Increased from 50000
-            dt0=0.01  # Made explicit to allow customization
+            dt0=0.1  # Made explicit to allow customization
     ) -> Dict[str, Float[Array, "..."]]:
         """
         Solve the ODE system.

@@ -12,6 +12,12 @@ def calculate_metrics(y_true: Float[Array, "N"], y_pred: Float[Array, "N"]) -> D
     # Root Mean Squared Error
     rmse = jnp.sqrt(mse)
 
+    # Normalized RMSE (by range)
+    value_range = jnp.max(y_true) - jnp.min(y_true)
+    nrmse = jnp.where(value_range > 1e-10,
+                      rmse / value_range,
+                      0.0)
+
     # Mean Absolute Error
     mae = jnp.mean(jnp.abs(y_pred - y_true))
 
@@ -27,6 +33,7 @@ def calculate_metrics(y_true: Float[Array, "N"], y_pred: Float[Array, "N"]) -> D
     return {
         'mse': float(mse),
         'rmse': float(rmse),
+        'nrmse': float(nrmse),
         'mae': float(mae),
         'r2': float(r2)
     }

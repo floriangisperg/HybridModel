@@ -159,7 +159,7 @@ def define_bioprocess_model(norm_params):
     builder.replace_with_nn(
         name='growth_rate',
         input_features=['X', 'P', 'temp', 'feed', 'inductor_mass'],
-        hidden_dims=[16, 16, 16],  # Smaller network
+        hidden_dims=[32,32,32],
         output_activation=jax.nn.soft_sign,  # Constrains output to [-1, 1]
         key=key1
     )
@@ -168,7 +168,7 @@ def define_bioprocess_model(norm_params):
     builder.replace_with_nn(
         name='product_rate',
         input_features=['X', 'P', 'temp', 'feed', 'inductor_mass'],
-        hidden_dims=[32, 32, 32],  # Smaller network
+        hidden_dims=[32,32,32],
         output_activation=jax.nn.softplus,  # Ensure non-negative rate
         key=key2
     )
@@ -200,7 +200,7 @@ def solve_for_dataset(model, dataset):
 
 
 # =============================================
-# DEFINE LOSS FUNCTION USING NEW MODULE
+# DEFINE LOSS FUNCTION
 # =============================================
 
 def bioprocess_loss_function(model, datasets):
@@ -248,44 +248,19 @@ def main():
 
     # Train model with error handling
     print("Training model...")
-    try:
-        # Split data for validation if enough datasets are available
-        if len(train_datasets) > 3:
-            # Use last 20% of train_datasets for validation
-            split_idx = int(len(train_datasets) * 0.8)
-            validation_datasets = train_datasets[split_idx:]
-            main_train_datasets = train_datasets[:split_idx]
 
-            trained_model, history, validation_history = train_hybrid_model(
-                model=model,
-                datasets=main_train_datasets,
-                loss_fn=bioprocess_loss_function,
-                num_epochs=10000,
-                learning_rate=6e-4,
-                early_stopping_patience=2000,
-                validation_datasets=validation_datasets
-            )
-        else:
-            # Not enough data for validation split
-            trained_model, history = train_hybrid_model(
-                model=model,
-                datasets=train_datasets,
-                loss_fn=bioprocess_loss_function,
-                num_epochs=5000,
-                learning_rate=1e-3,
-                early_stopping_patience=2500
-            )
-            validation_history = None
+    trained_model, history = train_hybrid_model(
+        model=model,
+        datasets=train_datasets,
+        loss_fn=bioprocess_loss_function,
+        num_epochs=5000,
+        learning_rate=1e-3,
+        early_stopping_patience=2500
+    )
+    validation_history = None
 
-        print("Training complete")
-    except Exception as e:
-        print(f"Error during training: {type(e).__name__}: {e}")
-        import traceback
-        traceback.print_exc()
-        print("\nFalling back to returning the untrained model")
-        history = {"loss": [], "aux": []}
-        validation_history = None
-        trained_model = model
+    print("Training complete")
+
 
     # Use our new visualization module to plot results
     print("Plotting results...")
@@ -323,7 +298,7 @@ def main():
             state_names=['X', 'P'],
             dataset_type="Test",
             save_metrics=True,
-            output_dir="bioprocess_results",
+            output_dir="bioprocess_results_nrmse",
             metrics_filename="test_metrics.txt"
         )
 
