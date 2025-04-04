@@ -298,7 +298,7 @@ def main():
             state_names=['X', 'P'],
             dataset_type="Test",
             save_metrics=True,
-            output_dir="bioprocess_results_nrmse",
+            output_dir="bioprocess_results",
             metrics_filename="test_metrics.txt"
         )
 
