@@ -39,6 +39,19 @@ class MSE(LossMetric):
         return "mse"
 
 
+class RelativeMSE(LossMetric):
+    """Relative Mean Squared Error loss metric."""
+
+    @staticmethod
+    def compute(y_pred, y_true):
+        """Compute the relative mean squared error."""
+        return jnp.mean(jnp.square((y_pred - y_true) / (y_true + 1e-8)))
+
+    @staticmethod
+    def name():
+        return "relative_mse"
+
+
 class MAE(LossMetric):
     """Mean Absolute Error loss metric."""
 

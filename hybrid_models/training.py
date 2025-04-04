@@ -45,7 +45,8 @@ def train_hybrid_model(
     opt_state = optimizer.init(params)
 
     # Define JIT-compiled update step
-    @partial(jax.jit, static_argnums=(2,))
+    #@partial(jax.jit, static_argnums=(2,))
+    @eqx.filter_jit
     def update_step(params, opt_state, model_static, datasets):
         def loss_wrapper(p):
             full_model = eqx.combine(p, model_static)
@@ -63,11 +64,16 @@ def train_hybrid_model(
 
     # Define function to compute validation loss - properly JIT-compatible
     # The key is to only pass the trainable parameters and keep model_static separate
-    @partial(jax.jit, static_argnums=(1,))
+    @eqx.filter_jit
     def compute_validation_loss(params, model_static, val_datasets):
-        full_model = eqx.combine(params, model_static)
-        val_loss, val_aux = loss_fn(full_model, val_datasets)
-        return val_loss, val_aux
+        try:
+            full_model = eqx.combine(params, model_static)
+            val_loss, val_aux = loss_fn(full_model, val_datasets)
+            return val_loss, val_aux
+        except Exception as e:
+            print(f"Validation error: {e}")
+            # Return a large loss value as a fallback
+            return jnp.array(1e6), (jnp.array(1e6),) * len(val_datasets[0].get('state_names', []))
 
     # Setup for early stopping
     best_loss = float('inf')

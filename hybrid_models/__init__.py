@@ -12,7 +12,7 @@ from .visualization import (plot_training_history, plot_state_predictions,
 from .evaluation_utils import (evaluate_model_performance, aggregate_evaluation_results,
                               create_metrics_summary, compare_models)
 # Loss function module
-from .loss import (LossMetric, MSE, MAE, WeightedMSE,
+from .loss import (LossMetric, MSE, RelativeMSE, MAE, WeightedMSE,
                   create_hybrid_model_loss, mse_loss, mae_loss)
 
 class HybridModelBuilder:
