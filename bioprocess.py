@@ -13,7 +13,10 @@ from hybrid_models import (
     train_hybrid_model,
     evaluate_hybrid_model,
     calculate_metrics,
-    create_initial_random_key
+    create_initial_random_key,
+    # Import loss functions
+    create_hybrid_model_loss,
+    MSE
 )
 
 # Import our new modules
@@ -174,51 +177,6 @@ def define_bioprocess_model(norm_params):
 
 
 # =============================================
-# DEFINE LOSS FUNCTION
-# =============================================
-
-def bioprocess_loss_function(model, datasets):
-    """Loss function for bioprocess model training."""
-    total_loss = 0.0
-    total_x_loss = 0.0
-    total_p_loss = 0.0
-
-    for dataset in datasets:
-        # Get predictions
-        solution = model.solve(
-            initial_state=dataset['initial_state'],
-            t_span=(dataset['times'][0], dataset['times'][-1]),
-            evaluation_times=dataset['times'],
-            args={
-                'time_dependent_inputs': dataset['time_dependent_inputs'],
-                'static_inputs': dataset.get('static_inputs', {})
-            },
-            max_steps=100000,
-            rtol=1e-2,  # Slightly relaxed tolerance
-            atol=1e-4  # Slightly relaxed tolerance
-        )
-
-        # Calculate loss
-        X_pred = solution['X']
-        P_pred = solution['P']
-        X_true = dataset['X_true']
-        P_true = dataset['P_true']
-
-        X_loss = jnp.mean(jnp.square(X_pred - X_true))
-        P_loss = jnp.mean(jnp.square(P_pred - P_true))
-
-        # Add to total loss
-        run_loss = X_loss + P_loss
-        total_loss += run_loss
-        total_x_loss += X_loss
-        total_p_loss += P_loss
-
-    # Return average loss
-    n_datasets = len(datasets)
-    return total_loss / n_datasets, (total_x_loss / n_datasets, total_p_loss / n_datasets)
-
-
-# =============================================
 # SOLVE MODEL FOR A DATASET
 # =============================================
 
@@ -238,6 +196,25 @@ def solve_for_dataset(model, dataset):
     )
 
     return solution
+
+
+# =============================================
+# DEFINE LOSS FUNCTION USING NEW MODULE
+# =============================================
+
+def bioprocess_loss_function(model, datasets):
+    """Loss function for bioprocess model training using the generic loss module."""
+    # Use the create_hybrid_model_loss function to create our loss function
+    loss_fn = create_hybrid_model_loss(
+        solve_fn=solve_for_dataset,  # Use our custom solve function
+        state_names=['X', 'P'],  # Focus on biomass and product
+        loss_metric=MSE,  # Use mean squared error
+        # Use equal weights for both states
+        component_weights={'X': 1.0, 'P': 1.0}
+    )
+
+    # Apply the created loss function to the model and datasets
+    return loss_fn(model, datasets)
 
 
 # =============================================

@@ -8,10 +8,12 @@ from .utils import (normalize_data, combine_normalization_params,
                     calculate_rate, create_initial_random_key)
 # New modules
 from .visualization import (plot_training_history, plot_state_predictions,
-                           plot_all_results, plot_parity, plot_combined_parity)
+                           plot_all_results)
 from .evaluation_utils import (evaluate_model_performance, aggregate_evaluation_results,
                               create_metrics_summary, compare_models)
-
+# Loss function module
+from .loss import (LossMetric, MSE, MAE, WeightedMSE,
+                  create_hybrid_model_loss, mse_loss, mae_loss)
 
 class HybridModelBuilder:
     """
