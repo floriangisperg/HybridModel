@@ -1,10 +1,16 @@
 from typing import Dict, List, Callable, Optional
 from .nn_module import ConfigurableNN
 from .ode_system import HybridODESystem, get_value_at_time
+# Import updated training module with validation support
 from .training import train_hybrid_model
 from .evaluation import calculate_metrics, evaluate_hybrid_model
 from .utils import (normalize_data, combine_normalization_params,
                     calculate_rate, create_initial_random_key)
+# New modules
+from .visualization import (plot_training_history, plot_state_predictions,
+                           plot_all_results)
+from .evaluation_utils import (evaluate_model_performance, aggregate_evaluation_results,
+                              create_metrics_summary, compare_models)
 
 
 class HybridModelBuilder:
