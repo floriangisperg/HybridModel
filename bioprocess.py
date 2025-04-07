@@ -1,19 +1,25 @@
+"""
+Bioprocess hybrid modeling example using the improved framework.
+
+This script demonstrates the use of the enhanced hybrid modeling framework
+with explicit control over model architecture, solver configuration, and
+comprehensive model documentation and persistence.
+"""
 import jax
 import jax.numpy as jnp
 import pandas as pd
 import os
 
-# Import hybrid modeling framework
+# Import core hybrid modeling framework
 from hybrid_models import (
     HybridModelBuilder,
     VariableRegistry,
-    MSE,
-    RelativeMSE
+    MSE, RelativeMSE,
+    SolverConfig,
+    ExperimentManager,
+    ModelConfig, NeuralNetworkConfig
 )
 
-# Import our improved modules
-from hybrid_models.experiment import ExperimentManager
-from hybrid_models.solver import SolverConfig
 from hybrid_models.data import DatasetManager, VariableType
 
 
@@ -23,7 +29,7 @@ from hybrid_models.data import DatasetManager, VariableType
 
 def load_bioprocess_data(file_path, train_run_ids=None, test_run_ids=None, train_ratio=0.8):
     """
-    Load bioprocess experimental data using the new approach.
+    Load bioprocess experimental data.
     """
     # Load data from Excel file
     data = pd.read_excel(file_path)
@@ -61,7 +67,7 @@ def load_bioprocess_data(file_path, train_run_ids=None, test_run_ids=None, train
     # Add variables to datasets
     manager.add_variables(variables.to_list(), data)
 
-    # Calculate normalization parameters (only from training data)
+    # Calculate normalization parameters (from training data only)
     manager.calculate_norm_params()
 
     return manager
@@ -71,8 +77,37 @@ def load_bioprocess_data(file_path, train_run_ids=None, test_run_ids=None, train
 # DEFINE BIOPROCESS MODEL
 # =============================================
 
-def define_bioprocess_model(norm_params):
-    """Define the bioprocess model components."""
+def define_bioprocess_model(
+        norm_params,
+        ann_config=None  # Allow passing in custom ANN configurations
+):
+    """
+    Define the bioprocess model with customizable neural network architecture.
+
+    Args:
+        norm_params: Normalization parameters
+        ann_config: Optional dictionary with neural network configurations
+
+    Returns:
+        Tuple of (model, model_config)
+    """
+    # Set default ANN configuration if none provided
+    if ann_config is None:
+        ann_config = {
+            'growth_rate': {
+                'hidden_dims': [32, 32, 32],
+                'output_activation': 'soft_sign',
+                'input_features': ['X', 'P', 'temp', 'feed', 'inductor_mass'],
+                'seed': 42
+            },
+            'product_rate': {
+                'hidden_dims': [32, 32, 32],
+                'output_activation': 'softplus',
+                'input_features': ['X', 'P', 'temp', 'feed', 'inductor_mass'],
+                'seed': 43
+            }
+        }
+
     # Create model builder
     builder = HybridModelBuilder()
 
@@ -82,6 +117,12 @@ def define_bioprocess_model(norm_params):
     # Add state variables
     builder.add_state('X')  # Biomass
     builder.add_state('P')  # Product
+
+    # Create model config for documentation
+    model_config = ModelConfig(
+        state_names=['X', 'P'],
+        mechanistic_components={}  # Will be filled in below
+    )
 
     # Define dilution rate calculation
     def calculate_dilution_rate(inputs):
@@ -132,30 +173,37 @@ def define_bioprocess_model(norm_params):
     builder.add_mechanistic_component('X', biomass_ode)
     builder.add_mechanistic_component('P', product_ode)
 
-    # Create random key for neural network initialization
-    key = jax.random.PRNGKey(42)
-    key1, key2 = jax.random.split(key)
+    # Add mechanistic components to model config
+    model_config.mechanistic_components['X'] = biomass_ode
+    model_config.mechanistic_components['P'] = product_ode
 
-    # Replace growth rate with neural network
-    builder.replace_with_nn(
-        name='growth_rate',
-        input_features=['X', 'P', 'temp', 'feed', 'inductor_mass'],
-        hidden_dims=[32, 32, 32],
-        output_activation=jax.nn.soft_sign,  # Constrains output to [-1, 1]
-        key=key1
-    )
+    # Create neural network configurations
+    for nn_name, nn_settings in ann_config.items():
+        # Create neural network configuration
+        nn_config = NeuralNetworkConfig(
+            name=nn_name,
+            input_features=nn_settings['input_features'],
+            hidden_dims=nn_settings['hidden_dims'],
+            output_activation=nn_settings['output_activation'],
+            seed=nn_settings.get('seed', 0)
+        )
 
-    # Replace product formation rate with neural network
-    builder.replace_with_nn(
-        name='product_rate',
-        input_features=['X', 'P', 'temp', 'feed', 'inductor_mass'],
-        hidden_dims=[32, 32, 32],
-        output_activation=jax.nn.softplus,  # Ensure non-negative rate
-        key=key2
-    )
+        # Add to model config for documentation
+        model_config.add_nn(nn_config)
 
-    # Build and return the model
-    return builder.build()
+        # Create the neural network in the builder
+        builder.replace_with_nn(
+            name=nn_name,
+            input_features=nn_config.input_features,
+            hidden_dims=nn_config.hidden_dims,
+            output_activation=nn_config.get_activation_fn(),
+            key=nn_config.get_random_key()
+        )
+
+    # Build the model
+    model = builder.build()
+
+    return model, model_config
 
 
 # =============================================
@@ -164,6 +212,31 @@ def define_bioprocess_model(norm_params):
 
 def main():
     """Main function to run the bioprocess hybrid modeling experiment."""
+    # Configure model architecture
+    ann_config = {
+        'growth_rate': {
+            'hidden_dims': [64, 32, 16],  # Customized architecture
+            'output_activation': 'soft_sign',
+            'input_features': ['X', 'P', 'temp', 'feed', 'inductor_mass'],
+            'seed': 42
+        },
+        'product_rate': {
+            'hidden_dims': [32, 32],  # Different architecture
+            'output_activation': 'softplus',
+            'input_features': ['X', 'P', 'temp', 'feed', 'inductor_mass'],
+            'seed': 43
+        }
+    }
+
+    # Configure solver
+    solver_config = SolverConfig(
+        solver_type="tsit5",
+        step_size_controller="pid",
+        rtol=1e-2,
+        atol=1e-4,
+        max_steps=500000
+    )
+
     # Load data
     print("Loading data...")
     data_manager = load_bioprocess_data(
@@ -181,48 +254,57 @@ def main():
     train_datasets = data_manager.prepare_training_data()
     test_datasets = data_manager.prepare_test_data()
 
-    # Build model
+    # Build model with customized architecture
     print("Building hybrid model...")
-    model = define_bioprocess_model(norm_params)
+    model, model_config = define_bioprocess_model(norm_params, ann_config)
 
     # Create experiment manager
     experiment = ExperimentManager(
         model=model,
+        model_config=model_config,
+        norm_params=norm_params,
         train_datasets=train_datasets,
         test_datasets=test_datasets,
         output_dir="results",
         experiment_name="bioprocess_experiment"
     )
 
-    # Train model
+    # Generate model documentation
+    print("Generating model documentation...")
+    experiment.generate_model_documentation()
+
+    # Save normalization parameters
+    experiment.save_normalization_parameters()
+
+    # Train model with customized settings
+    print("Training model...")
     trained_model = experiment.train(
-        state_names=['X', 'P'],
         num_epochs=5000,
         learning_rate=1e-3,
         early_stopping_patience=2500,
-        component_weights={'X': 1.0, 'P': 1.0},
+        component_weights={'X': 1.0, 'P': 1.5},  # Weight product prediction higher
         loss_metric=MSE,
-        solver_config=SolverConfig.for_training()
+        solver_config=solver_config,
+        save_checkpoints=True
     )
 
-    # Evaluate model
-    metrics = experiment.evaluate(
-        state_names=['X', 'P'],
-        solver_config=SolverConfig.for_evaluation()
-    )
+
 
     # Visualize results
+    print("Generating visualizations...")
     experiment.visualize(
-        state_names=['X', 'P'],
         state_labels={'X': 'Biomass (CDW g/L)', 'P': 'Product (g/L)'},
-        component_names=['Biomass Loss', 'Product Loss']
+        component_names=['Biomass Loss', 'Product Loss'],
     )
 
-    # Save experiment summary
-    experiment.save_results_summary()
+    # Save all results
+    print("Saving all results...")
+    result_paths = experiment.save_all_results()
 
     print("Experiment completed successfully!")
-    return trained_model, train_datasets, test_datasets
+    print(f"All results saved to {experiment.output_dir}")
+
+    return trained_model, train_datasets, test_datasets, experiment
 
 
 if __name__ == "__main__":

@@ -107,8 +107,10 @@ class HybridODESystem(eqx.Module):
             solver=diffrax.Tsit5(),
             rtol=1e-3,
             atol=1e-6,
-            max_steps=100000,  # Increased from 50000
-            dt0=0.1  # Made explicit to allow customization
+            max_steps=100000,
+            dt0=0.1,
+            stepsize_controller=None,  # Optional explicit stepsize controller
+            **kwargs
     ) -> Dict[str, Float[Array, "..."]]:
         """
         Solve the ODE system.
@@ -121,6 +123,10 @@ class HybridODESystem(eqx.Module):
             solver: Diffrax solver
             rtol: Relative tolerance
             atol: Absolute tolerance
+            max_steps: Maximum number of steps
+            dt0: Initial step size
+            stepsize_controller: Optional explicit stepsize controller (if None, creates PIDController)
+            **kwargs: Additional keyword arguments
 
         Returns:
             Dictionary containing solution arrays
@@ -134,6 +140,10 @@ class HybridODESystem(eqx.Module):
         # Set up saveat
         saveat = diffrax.SaveAt(ts=evaluation_times)
 
+        # Use provided stepsize_controller or create default one based on rtol/atol
+        if stepsize_controller is None:
+            stepsize_controller = diffrax.PIDController(rtol=rtol, atol=atol)
+
         # Solve ODE with robust settings
         sol = diffrax.diffeqsolve(
             term,
@@ -145,7 +155,8 @@ class HybridODESystem(eqx.Module):
             args=args,
             saveat=saveat,
             max_steps=max_steps,
-            stepsize_controller=diffrax.PIDController(rtol=rtol, atol=atol)
+            stepsize_controller=stepsize_controller,
+            **kwargs
         )
 
         # Extract solution and return as dictionary
