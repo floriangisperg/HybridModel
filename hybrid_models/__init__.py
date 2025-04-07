@@ -17,6 +17,11 @@ from .loss import (LossMetric, MSE, RelativeMSE, MAE, WeightedMSE, NRMSE,
 # New data utilities
 from .data_utils import VariableRegistry
 
+# New solver utilities
+from .solver import SolverConfig, solve_for_dataset
+# New experiment management
+from .experiment import ExperimentManager
+
 class HybridModelBuilder:
     """
     Builder for creating hybrid models that combine mechanistic components with neural networks.
