@@ -16,7 +16,8 @@ from hybrid_models import (
     create_initial_random_key,
     # Import loss functions
     create_hybrid_model_loss,
-    MSE, RelativeMSE, WeightedMSE
+    MSE, RelativeMSE, WeightedMSE,
+    VariableRegistry
 )
 
 # Import our new modules
@@ -60,25 +61,25 @@ def load_bioprocess_data(file_path, train_run_ids=None, test_run_ids=None, train
         train_ratio=train_ratio
     )
 
-    # Define variables to load
-    variable_definitions = [
-        # State variables (output variables)
-        ('CDW(g/L)', VariableType.STATE, 'X', True, False),
-        ('Produktsol(g/L)', VariableType.STATE, 'P', True, False),
+    # Define variables using VariableRegistry
+    variables = VariableRegistry()
 
-        # Control variables
-        ('Temp(°C)', VariableType.CONTROL, 'temp', False, False),
-        ('InductorMASS(mg)', VariableType.CONTROL, 'inductor_mass', False, False),
-        ('Inductor(yesno)', VariableType.CONTROL, 'inductor_switch', False, False),
+    # State variables (outputs)
+    variables.add_state('CDW(g/L)', internal_name='X')
+    variables.add_state('Produktsol(g/L)', internal_name='P')
 
-        # Feed variables (with rate calculation)
-        ('Feed(L)', VariableType.FEED, 'feed', False, True),
-        ('Base(L)', VariableType.FEED, 'base', False, True),
-        ('Reaktorvolumen(L)', VariableType.CONTROL, 'reactor_volume', False, False),
-    ]
+    # Control variables
+    variables.add_control('Temp(°C)', internal_name='temp')
+    variables.add_control('InductorMASS(mg)', internal_name='inductor_mass')
+    variables.add_control('Inductor(yesno)', internal_name='inductor_switch')
+    variables.add_control('Reaktorvolumen(L)', internal_name='reactor_volume')
+
+    # Feed variables (with rate calculation)
+    variables.add_feed('Feed(L)', internal_name='feed')
+    variables.add_feed('Base(L)', internal_name='base')
 
     # Add variables to datasets
-    manager.add_variables(variable_definitions, data)
+    manager.add_variables(variables.to_list(), data)
 
     # Calculate normalization parameters (only from training data)
     manager.calculate_norm_params()

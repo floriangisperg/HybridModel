@@ -14,6 +14,8 @@ from .evaluation_utils import (evaluate_model_performance, aggregate_evaluation_
 # Loss function module
 from .loss import (LossMetric, MSE, RelativeMSE, MAE, WeightedMSE, NRMSE,
                   create_hybrid_model_loss, mse_loss, mae_loss)
+# New data utilities
+from .data_utils import VariableRegistry
 
 class HybridModelBuilder:
     """
