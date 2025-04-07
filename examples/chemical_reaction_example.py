@@ -522,19 +522,19 @@ def main():
     # Configure model architecture with custom neural networks
     ann_config = {
         'r3_enhancement': {  # Capture catalyst effects on r3
-            'hidden_dims': [32, 32, 32],
+            'hidden_dims': [4, 4, 4],
             'output_activation': 'softplus',
             'input_features': ['D', 'Catalyst', 'Temp'],
             'seed': 42
         },
         'r2_inhibition': {  # Capture inhibition of r2
-            'hidden_dims': [32, 32, 32],
+            'hidden_dims': [4, 4, 4],
             'output_activation': 'sigmoid',
             'input_features': ['C', 'D', 'Temp'],
             'seed': 43
         },
         'missing_reaction': {  # Capture the missing F+C→G reaction
-            'hidden_dims': [32, 32, 32],
+            'hidden_dims': [4, 4, 4],
             'output_activation': 'softplus',
             'input_features': ['F', 'C', 'Temp'],
             'seed': 44
@@ -543,11 +543,11 @@ def main():
 
     # Configure solver
     solver_config = SolverConfig(
-        solver_type="tsit5",  # Higher accuracy solver for this stiff system
+        solver_type="kvaerno3",  # Higher accuracy solver for this stiff system
         step_size_controller="pid",
-        rtol=1e-3,
-        atol=1e-6,
-        max_steps=100000
+        rtol=1e-2,
+        atol=1e-4,
+        max_steps=500000
     )
 
     # Build model with customized architecture
