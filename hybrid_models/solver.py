@@ -40,6 +40,8 @@ class SolverConfig:
             "tsit5": diffrax.Tsit5(),
             "dopri5": diffrax.Dopri5(),
             "dopri8": diffrax.Dopri8(),
+            "kvaerno3": diffrax.Kvaerno3(),
+            "kvaerno5": diffrax.Kvaerno5(),
             "euler": diffrax.Euler(),
             "heun": diffrax.Heun(),
             "midpoint": diffrax.Midpoint(),
