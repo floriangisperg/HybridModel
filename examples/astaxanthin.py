@@ -9,7 +9,7 @@ import os
 import numpy as np
 import jax
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
+import pandas as pd
 from scipy.integrate import solve_ivp
 from typing import List, Dict
 
@@ -19,8 +19,10 @@ from hybrid_models import (
     ModelConfig,
     NeuralNetworkConfig,
     ExperimentManager,
-    SolverConfig
+    SolverConfig,
+    VariableRegistry
 )
+from hybrid_models.data import DatasetManager
 
 
 # Define the ground truth model for data generation
@@ -43,7 +45,7 @@ class GroundTruthModel:
         S = max(1e-10, S)
         P = max(1e-10, P)
 
-        # Ground truth dynamics (complex model we assume we don't fully know)
+        # Ground truth dynamics
         dX_dt = self.mu_m * S / (S + self.K_S) * X - self.mu_d * X
         dS_dt = -self.Y_S * self.mu_m * S / (S + self.K_S) * X
         dP_dt = self.b * X - self.k_d * X ** 2 * P / (P + self.K_p)
@@ -51,65 +53,44 @@ class GroundTruthModel:
         return np.array([dX_dt, dS_dt, dP_dt])
 
 
-def generate_data(initial_conditions=None,
-                 t_max=168.0,
-                 irregular=True,
-                 noise_level=0.1):
-    """
-    Generate in silico experimental data from the ground truth model.
-    """
+def generate_experimental_data(initial_conditions, t_max=168.0, noise_level=0.15):
+    """Generate synthetic experimental data from the ground truth model."""
     model = GroundTruthModel()
-
-    experiments = []
+    all_data = []
 
     for exp_idx, y0 in enumerate(initial_conditions):
-        # Define time points
-        if irregular:
-            # Generate irregular time points with more samples at the beginning
-            base_points = np.linspace(0, t_max, 15)  # 15 base points
-            noise = np.random.uniform(-4, 4, size=len(base_points) - 2)  # Add noise to middle points
-            t_points = np.sort(np.concatenate([
-                [0],  # Always include t=0
-                base_points[1:-1] + noise,
-                [t_max]  # Always include t_max
-            ]))
-        else:
-            # Regular sampling every 12 hours
-            t_points = np.arange(0, t_max + 12, 12)
+        # Generate irregular time points
+        base_points = np.linspace(0, t_max, 15)
+        noise = np.random.uniform(-4, 4, size=len(base_points) - 2)
+        t_points = np.sort(np.concatenate([
+            [0], base_points[1:-1] + noise, [t_max]
+        ]))
 
-        # Solve the ODE
+        # Solve ODE
         solution = solve_ivp(model, [0, t_max], y0, t_eval=t_points, method='RK45')
 
-        # Extract results
+        # Extract results and add noise
         times = solution.t
-        X = solution.y[0]
-        S = solution.y[1]
-        P = solution.y[2]
+        X = solution.y[0] * (1 + noise_level * np.random.randn(len(times)))
+        S = solution.y[1] * (1 + noise_level * np.random.randn(len(times)))
+        P = solution.y[2] * (1 + noise_level * np.random.randn(len(times)))
 
-        # Add measurement noise
-        X_noisy = X * (1 + noise_level * np.random.randn(len(X)))
-        S_noisy = S * (1 + noise_level * np.random.randn(len(S)))
-        P_noisy = P * (1 + noise_level * np.random.randn(len(P)))
+        # Ensure positive values
+        X = np.maximum(X, 1e-10)
+        S = np.maximum(S, 1e-10)
+        P = np.maximum(P, 1e-10)
 
-        # Ensure no negative values after adding noise
-        X_noisy = np.maximum(X_noisy, 1e-10)
-        S_noisy = np.maximum(S_noisy, 1e-10)
-        P_noisy = np.maximum(P_noisy, 1e-10)
+        # Create rows for DataFrame - simple version with just X, S, P and time
+        for i in range(len(times)):
+            all_data.append({
+                'time': times[i],
+                'biomass': X[i],
+                'substrate': S[i],
+                'product': P[i],
+                'RunID': f"Exp{exp_idx+1}"
+            })
 
-        # Store the experiment data in the format expected by hybrid_models
-        experiments.append({
-            'times': jnp.array(times),
-            'initial_state': {
-                'X': float(y0[0]),
-                'S': float(y0[1]),
-                'P': float(y0[2])
-            },
-            'X_true': jnp.array(X_noisy),
-            'S_true': jnp.array(S_noisy),
-            'P_true': jnp.array(P_noisy)
-        })
-
-    return experiments
+    return pd.DataFrame(all_data)
 
 
 def main():
@@ -117,7 +98,7 @@ def main():
     output_dir = "examples/results/astaxanthin"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Define initial conditions as specified
+    # Define initial conditions
     Y0a = [0.1, 10, 0]
     Y0b = [0.2, 5, 0]
     Y0c = [0.05, 14, 0]
@@ -130,92 +111,94 @@ def main():
     Y0_train = [Y0a, Y0b, Y0c, Y0j]
     Y0_test = [Y0d, Y0e, Y0f, Y0l]
 
-    # Generate training and test datasets with specified initial conditions
+    # Generate experimental data
     print("Generating synthetic data...")
-    train_datasets = generate_data(initial_conditions=Y0_train, noise_level=0.05)
-    test_datasets = generate_data(initial_conditions=Y0_test, noise_level=0.05)
+    df_train = generate_experimental_data(Y0_train, noise_level=0.20)
+    df_test = generate_experimental_data(Y0_test, noise_level=0.20)
 
-    # Calculate normalization parameters
-    print("Calculating normalization parameters...")
-    norm_params = {}
+    # Set up DatasetManager for data handling
+    print("Processing data...")
+    manager = DatasetManager()
 
-    # Collect all values for normalization
-    all_X = []
-    all_S = []
-    all_P = []
+    # Load data with train/test split
+    manager.load_from_dataframe(
+        df=df_train,
+        time_column='time',
+        run_id_column='RunID'
+    )
 
-    for exp in train_datasets:
-        all_X.extend(exp['X_true'])
-        all_S.extend(exp['S_true'])
-        all_P.extend(exp['P_true'])
+    # Define variables using VariableRegistry
+    variables = VariableRegistry()
 
-    # Calculate mean and std for each state variable
-    norm_params['X_mean'] = float(np.mean(all_X))
-    norm_params['X_std'] = float(np.std(all_X))
-    norm_params['S_mean'] = float(np.mean(all_S))
-    norm_params['S_std'] = float(np.std(all_S))
-    norm_params['P_mean'] = float(np.mean(all_P))
-    norm_params['P_std'] = float(np.std(all_P))
+    # State variables (outputs)
+    variables.add_state('biomass', internal_name='X', is_output=True)
+    variables.add_state('substrate', internal_name='S', is_output=True)
+    variables.add_state('product', internal_name='P', is_output=True)
 
-    # Create the hybrid model builder
+    # Add variables to datasets
+    manager.add_variables(variables.to_list(), df_train)
+
+    # Calculate normalization parameters (from training data only)
+    manager.calculate_norm_params()
+
+    # Prepare training datasets
+    train_datasets = manager.prepare_training_data()
+
+    # Set up test data manager
+    test_manager = DatasetManager()
+    test_manager.load_from_dataframe(
+        df=df_test,
+        time_column='time',
+        run_id_column='RunID'
+    )
+    test_manager.add_variables(variables.to_list(), df_test)
+    test_datasets = test_manager.prepare_test_data()
+
+    # Create the hybrid model
     print("Creating hybrid model...")
     builder = HybridModelBuilder()
 
     # Set normalization parameters
-    builder.set_normalization_params(norm_params)
+    builder.set_normalization_params(manager.norm_params)
 
     # Add state variables
-    builder.add_state('X')  # Biomass
-    builder.add_state('S')  # Substrate
-    builder.add_state('P')  # Product
+    builder.add_state('X')
+    builder.add_state('S')
+    builder.add_state('P')
 
-    # Add trainable parameters (with positive constraints)
+    # Add the trainable parameter k_c (substrate saturation constant)
     builder.add_trainable_parameter('k_c', 50.0, bounds=(1.0, 200.0), transform="softplus")
-    # Make y_sx a trainable parameter instead of a neural network
+
+    # Add the trainable parameter y_sx (yield coefficient)
     builder.add_trainable_parameter('y_sx', 2.5, bounds=(0.1, 10.0), transform="softplus")
 
-    # Define the simplified mechanistic ODE components
+    # Define the mechanistic ODE components
     def biomass_ode(inputs):
-        # Extract state variables
         X = inputs['X']
         S = inputs['S']
+        mu_m = inputs['mu_m']  # Neural network parameter
+        k_c = inputs['k_c']    # Trainable parameter
 
-        # Neural network parameter
-        mu_m = inputs['mu_m']  # This will be replaced by a neural network
-
-        # Trainable parameter
-        k_c = inputs['k_c']
-
-        # Simplified biomass ODE without decay term
+        # Simplified biomass ODE
         dX_dt = mu_m * S / (S + k_c) * X
         return dX_dt
 
     def substrate_ode(inputs):
-        # Extract state variables
         X = inputs['X']
         S = inputs['S']
-
-        # Neural network parameter
-        mu_m = inputs['mu_m']  # This will be replaced by a neural network
-
-        # Now y_sx is a trainable parameter, not a neural network
-        y_sx = inputs['y_sx']
-
-        # Trainable parameter
-        k_c = inputs['k_c']
+        mu_m = inputs['mu_m']  # Neural network parameter
+        y_sx = inputs['y_sx']  # Trainable parameter
+        k_c = inputs['k_c']    # Trainable parameter
 
         # Simplified substrate ODE
         dS_dt = -y_sx * mu_m * S / (S + k_c) * X
         return dS_dt
 
     def product_ode(inputs):
-        # Extract state variables
         X = inputs['X']
+        beta = inputs['beta']  # Neural network parameter
 
-        # Neural network parameter
-        beta = inputs['beta']  # This will be replaced by a neural network
-
-        # Simplified product ODE without consumption term
+        # Simplified product ODE
         dP_dt = beta * X
         return dP_dt
 
@@ -228,21 +211,20 @@ def main():
     key = jax.random.PRNGKey(42)
     key1, key2 = jax.random.split(key)
 
-    # Replace parameters with neural networks
-    # Note: We use softplus activation to ensure positive values
+    # Replace parameters with neural networks - using only X, S, P as inputs
     builder.replace_with_nn(
-        name='mu_m',  # Maximum specific growth rate
+        name='mu_m',
         input_features=['X', 'S', 'P'],
         hidden_dims=[16, 8],
-        output_activation=jax.nn.soft_sign,  # Ensure positivity
+        output_activation=jax.nn.soft_sign,
         key=key1
     )
 
     builder.replace_with_nn(
-        name='beta',  # Growth-independent yield coefficient
+        name='beta',
         input_features=['X', 'S', 'P'],
         hidden_dims=[16, 8],
-        output_activation=jax.nn.soft_sign,  # Ensure positivity
+        output_activation=jax.nn.soft_sign,
         key=key2
     )
 
@@ -268,21 +250,19 @@ def main():
         seed=42
     ))
 
-    # No longer need this config for y_sx
-
     model_config.add_nn(NeuralNetworkConfig(
         name='beta',
         input_features=['X', 'S', 'P'],
         hidden_dims=[16, 8],
         output_activation='softplus',
-        seed=44
+        seed=43
     ))
 
     # Create experiment manager
     experiment = ExperimentManager(
         model=model,
         model_config=model_config,
-        norm_params=norm_params,
+        norm_params=manager.norm_params,
         train_datasets=train_datasets,
         test_datasets=test_datasets,
         output_dir=output_dir,
@@ -302,16 +282,14 @@ def main():
         max_steps=10000
     )
 
-    # Train the model with component weights for different states
+    # Train the model
     print("Training model...")
     trained_model = experiment.train(
         state_names=['X', 'S', 'P'],
         num_epochs=5000,
         learning_rate=3e-3,
-        early_stopping_patience=100,
-        # Add component weights to give different importance to each state
-        component_weights={'X': 2.0, 'S': 1.0, 'P': 1.0},
-        # Biomass normal weight, Substrate less weight, Product higher weight
+        early_stopping_patience=500,
+        component_weights={'X': 1.0, 'S': 1, 'P': 1},
         solver_config=solver_config,
         save_checkpoints=True
     )
