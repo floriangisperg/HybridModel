@@ -1,4 +1,6 @@
-from typing import Dict, List, Callable, Optional
+import jax.numpy as jnp
+
+from typing import Dict, List, Callable, Optional, Tuple
 from .nn_module import ConfigurableNN
 from .ode_system import HybridODESystem, get_value_at_time
 # Import updated training module with validation support
@@ -57,6 +59,35 @@ class HybridModelBuilder:
         """
         self.mechanistic_components[name] = component_fn
 
+    def add_trainable_parameter(self, name: str, initial_value: float,
+                                bounds: Optional[Tuple[float, float]] = None,
+                                transform: str = "none"):
+        """
+        Add a directly trainable parameter to the model.
+
+        Args:
+            name: Name of the parameter
+            initial_value: Initial value for the parameter
+            bounds: Optional tuple of (min_value, max_value) to constrain the parameter
+            transform: Transformation to apply ("none", "sigmoid", "softplus", "exp")
+        """
+        # Initialize trainable parameters dict if not already present
+        if not hasattr(self, 'trainable_parameters'):
+            self.trainable_parameters = {}
+            self.parameter_transforms = {}
+
+        # Store as JAX Array to make it trainable
+        param_value = jnp.array(initial_value, dtype=float)
+
+        # Store parameter info
+        self.trainable_parameters[name] = param_value
+        self.parameter_transforms[name] = {
+            'transform': transform,
+            'bounds': bounds
+        }
+
+        return self  # Allow method chaining
+
     def replace_with_nn(self, name: str, input_features: List[str],
                         hidden_dims: List[int] = [16, 16],
                         output_activation: callable = None,
@@ -98,8 +129,15 @@ class HybridModelBuilder:
         Returns:
             HybridODESystem instance
         """
+        # Initialize trainable parameters if not defined
+        if not hasattr(self, 'trainable_parameters'):
+            self.trainable_parameters = {}
+            self.parameter_transforms = {}
+
         return HybridODESystem(
             mechanistic_components=self.mechanistic_components,
             nn_replacements=self.nn_replacements,
+            trainable_parameters=self.trainable_parameters,
+            parameter_transforms=self.parameter_transforms,
             state_names=self.state_names
         )

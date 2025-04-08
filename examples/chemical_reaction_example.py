@@ -30,12 +30,12 @@ from hybrid_models.data import DatasetManager, VariableType
 # =============================================
 
 def generate_chemical_kinetics_data(
-        n_experiments=8,
-        time_points=50,
-        t_max=10.0,
-        add_noise=True,
-        noise_level=0.02,
-        random_seed=42
+    n_experiments=10,
+    time_points=50,
+    t_max=10.0,
+    add_noise=True,
+    noise_level=0.02,
+    random_seed=42
 ):
     """
     Generate synthetic data from a complex chemical reaction network.
@@ -83,27 +83,28 @@ def generate_chemical_kinetics_data(
         T, catalyst = params['T'], params['catalyst']
 
         # Temperature-dependent rate constants (Arrhenius equation)
-        k1 = A1 * np.exp(-E1 / (R * T))
-        k2 = A2 * np.exp(-E2 / (R * T))
-        k3 = A3 * np.exp(-E3 / (R * T))
-        k4 = A4 * np.exp(-E4 / (R * T))
-        k5 = A5 * np.exp(-E5 / (R * T))
+        k1 = A1 * np.exp(-E1/(R*T))
+        k2 = A2 * np.exp(-E2/(R*T))
+        k3 = A3 * np.exp(-E3/(R*T))
+        k4 = A4 * np.exp(-E4/(R*T))
+        k5 = A5 * np.exp(-E5/(R*T))
 
-        # Reaction rates with complex effects
+        # Use more moderate, numerically stable reaction rates
         r1 = k1 * A * B  # A + B → C
 
-        # Inhibition effect: D inhibits its own formation
-        inhibition_factor = 1.0 / (1.0 + D / 0.2)
+        # Milder inhibition effect: D inhibits its own formation
+        inhibition_factor = 1.0 / (1.0 + D/0.5)  # Less strong inhibition
         r2 = k2 * C * inhibition_factor  # C → D with inhibition
 
-        # Catalyst effect
-        r3 = k3 * D * catalyst  # D → E (catalyst-dependent)
+        # Catalyst effect with cap to prevent too fast reactions
+        catalyst_effect = min(catalyst, 0.8)  # Cap the catalyst effect
+        r3 = k3 * D * catalyst_effect  # D → E (catalyst-dependent)
 
         # Simple reaction
         r4 = k4 * A * E  # A + E → F
 
-        # F + C → G with substrate inhibition at high F
-        substrate_inhibition = 1.0 / (1.0 + F / 0.5)
+        # F + C → G with milder substrate inhibition
+        substrate_inhibition = 1.0 / (1.0 + F/1.0)  # Less strong inhibition
         r5 = k5 * F * C * substrate_inhibition  # F + C → G
 
         return r1, r2, r3, r4, r5
@@ -275,13 +276,13 @@ def define_simplified_model(norm_params, ann_config=None):
     if ann_config is None:
         ann_config = {
             'r3_enhancement': {  # Capture catalyst effects on r3
-                'hidden_dims': [32, 32, 32],
+                'hidden_dims': [32, 32],
                 'output_activation': 'softplus',
                 'input_features': ['D', 'Catalyst', 'Temp'],
                 'seed': 42
             },
             'r2_inhibition': {  # Capture inhibition of r2
-                'hidden_dims': [32, 32, 32],
+                'hidden_dims': [32, 32],
                 'output_activation': 'sigmoid',
                 'input_features': ['C', 'D', 'Temp'],
                 'seed': 43
@@ -321,7 +322,7 @@ def define_simplified_model(norm_params, ann_config=None):
     def simplified_arrhenius(A_factor, E_activation, T):
         """Simplified Arrhenius equation for rate constants."""
         R = 8.314  # J/(mol·K)
-        return A_factor * jnp.exp(-E_activation / (R * T))
+        return A_factor * jnp.exp(-E_activation/(R*T))
 
     # A + B → C
     def dA_dt(inputs):
@@ -329,12 +330,15 @@ def define_simplified_model(norm_params, ann_config=None):
         B = inputs['B']
         T = inputs['Temp']
 
-        # Simplified r1 rate
-        k1 = simplified_arrhenius(1e10, 50000, T)
+        # Simplified r1 rate with reduced constants to match data generation
+        k1 = simplified_arrhenius(1e6, 25000, T)
         r1 = k1 * A * B
 
         # A consumed in reaction 1 and 4
-        r4 = inputs.get('r4', 0.0)
+        # Calculate r4 directly here to avoid relying on inputs dictionary modification
+        E = inputs['E']
+        k4 = simplified_arrhenius(1e6, 25000, T)
+        r4 = k4 * A * E
 
         return -r1 - r4
 
@@ -343,8 +347,8 @@ def define_simplified_model(norm_params, ann_config=None):
         B = inputs['B']
         T = inputs['Temp']
 
-        # Simplified r1 rate
-        k1 = simplified_arrhenius(1e10, 50000, T)
+        # Simplified r1 rate with reduced constants
+        k1 = simplified_arrhenius(1e6, 25000, T)
         r1 = k1 * A * B
 
         return -r1
@@ -355,14 +359,14 @@ def define_simplified_model(norm_params, ann_config=None):
         C = inputs['C']
         T = inputs['Temp']
 
-        # Reaction rates
-        k1 = simplified_arrhenius(1e10, 50000, T)
+        # Reaction rates with reduced constants
+        k1 = simplified_arrhenius(1e6, 25000, T)
         r1 = k1 * A * B
 
         # Use neural network to capture complex inhibition
         inhibition_factor = inputs['r2_inhibition']  # From neural network
 
-        k2 = simplified_arrhenius(1e12, 60000, T)
+        k2 = simplified_arrhenius(1e7, 30000, T)
         r2 = k2 * C * inhibition_factor
 
         # Include effect of missing reaction (to be learned)
@@ -378,13 +382,14 @@ def define_simplified_model(norm_params, ann_config=None):
         # Use neural network to capture complex inhibition
         inhibition_factor = inputs['r2_inhibition']  # From neural network
 
-        k2 = simplified_arrhenius(1e12, 60000, T)
+        k2 = simplified_arrhenius(1e7, 30000, T)
         r2 = k2 * C * inhibition_factor
 
         # Apply catalyst enhancement learned by neural network
-        catalyst_enhancement = inputs['r3_enhancement']  # From neural network
+        # Cap to prevent numerical instability
+        catalyst_enhancement = jnp.minimum(inputs['r3_enhancement'], 5.0)
 
-        k3 = simplified_arrhenius(1e8, 40000, T)
+        k3 = simplified_arrhenius(1e6, 20000, T)
         r3 = k3 * D * catalyst_enhancement
 
         return r2 - r3
@@ -393,20 +398,18 @@ def define_simplified_model(norm_params, ann_config=None):
         D = inputs['D']
         E = inputs['E']
         T = inputs['Temp']
+        A = inputs['A']
 
         # Apply catalyst enhancement learned by neural network
-        catalyst_enhancement = inputs['r3_enhancement']  # From neural network
+        # Cap to prevent numerical instability
+        catalyst_enhancement = jnp.minimum(inputs['r3_enhancement'], 5.0)
 
-        k3 = simplified_arrhenius(1e8, 40000, T)
+        k3 = simplified_arrhenius(1e6, 20000, T)
         r3 = k3 * D * catalyst_enhancement
 
         # E is also consumed in r4
-        k4 = simplified_arrhenius(1e9, 45000, T)
-        A = inputs['A']
+        k4 = simplified_arrhenius(1e6, 25000, T)
         r4 = k4 * A * E
-
-        # Calculate r4 for use in dA_dt
-        inputs['r4'] = r4
 
         return r3 - r4
 
@@ -486,19 +489,19 @@ def main():
     print("Chemical Kinetics Hybrid Modeling Example")
     print("=========================================")
 
-    # Parameters
-    n_experiments = 10
+    # Parameters - reduce complexity for stability
+    n_experiments = 2
     output_dir = "examples/results/chemical_kinetics"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Generate synthetic data
+    # Generate synthetic data - reduce time range and complexity
     print("\nGenerating synthetic data...")
     kinetics_data = generate_chemical_kinetics_data(
         n_experiments=n_experiments,
-        time_points=10,
-        t_max=10.0,
+        time_points=5,
+        t_max=5.0,  # Shorter time range to avoid stiffness
         add_noise=True,
-        noise_level=0.05
+        noise_level=0.01  # Less noise
     )
 
     # Save raw data
@@ -522,32 +525,33 @@ def main():
     # Configure model architecture with custom neural networks
     ann_config = {
         'r3_enhancement': {  # Capture catalyst effects on r3
-            'hidden_dims': [4, 4, 4],
+            'hidden_dims': [32, 32, 32,32],
             'output_activation': 'softplus',
             'input_features': ['D', 'Catalyst', 'Temp'],
             'seed': 42
         },
         'r2_inhibition': {  # Capture inhibition of r2
-            'hidden_dims': [4, 4, 4],
+            'hidden_dims': [32, 32, 32,32],
             'output_activation': 'sigmoid',
             'input_features': ['C', 'D', 'Temp'],
             'seed': 43
         },
         'missing_reaction': {  # Capture the missing F+C→G reaction
-            'hidden_dims': [4, 4, 4],
+            'hidden_dims': [32, 32, 32,32],
             'output_activation': 'softplus',
             'input_features': ['F', 'C', 'Temp'],
             'seed': 44
         }
     }
 
-    # Configure solver
+    # Configure solver for stiff systems
     solver_config = SolverConfig(
-        solver_type="kvaerno3",  # Higher accuracy solver for this stiff system
+        solver_type="Kvaerno3",  # Tsit5 balances accuracy and stability
         step_size_controller="pid",
-        rtol=1e-2,
-        atol=1e-4,
-        max_steps=500000
+        rtol=1e-2,            # Relaxed tolerance
+        atol=1e-4,            # Relaxed tolerance
+        max_steps=1000000,    # Increased max steps
+        dt0=0.01              # Smaller initial step size
     )
 
     # Build model with customized architecture
@@ -572,13 +576,13 @@ def main():
     # Save normalization parameters
     experiment.save_normalization_parameters()
 
-    # Train model with customized settings
+    # Train model with more stable settings
     print("\nTraining model...")
     trained_model = experiment.train(
         state_names=['A', 'B', 'C', 'D', 'E', 'F', 'G'],
-        num_epochs=1000,  # Increase for better results
-        learning_rate=1e-3,
-        early_stopping_patience=100,
+        num_epochs=500,       # Fewer epochs
+        learning_rate=5e-4,   # Smaller learning rate for stability
+        early_stopping_patience=50,
         component_weights={
             'A': 1.0, 'B': 1.0, 'C': 1.0, 'D': 1.0,
             'E': 1.0, 'F': 1.0, 'G': 1.5  # Weight G higher since it depends on the missing reaction

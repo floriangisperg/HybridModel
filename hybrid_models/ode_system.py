@@ -14,42 +14,62 @@ def get_value_at_time(t: float, times: Float[Array, "N"], values: Float[Array, "
 
 class HybridODESystem(eqx.Module):
     """
-    A general framework for hybrid ODE systems that combine mechanistic models with neural networks.
+    A general framework for hybrid ODE systems that combine mechanistic models with neural networks
+    and trainable parameters.
     """
-    mechanistic_components: Dict[str, Callable[[Dict[str, Float[Array, "..."]]],
-    Float[Array, ""]]]  # Dict of mechanistic model components
-    nn_replacements: Dict[str, eqx.Module]  # Dict of neural network replacements
-    state_names: List[str]  # Names of state variables
+    mechanistic_components: Dict[str, Callable]
+    nn_replacements: Dict[str, eqx.Module]
+    trainable_parameters: Dict[str, jnp.ndarray]
+    parameter_transforms: Dict[str, Dict]
+    state_names: List[str]
 
     def __init__(
             self,
             mechanistic_components: Dict[str, Callable],
             nn_replacements: Dict[str, eqx.Module],
+            trainable_parameters: Dict[str, jnp.ndarray],
+            parameter_transforms: Dict[str, Dict],
             state_names: List[str]
     ):
         """
         Initialize the hybrid ODE system.
 
         Args:
-            mechanistic_components: Dictionary of mechanistic model components as callables
-            nn_replacements: Dictionary of neural network replacements for specific components
+            mechanistic_components: Dictionary of mechanistic model components
+            nn_replacements: Dictionary of neural network replacements
+            trainable_parameters: Dictionary of trainable parameters
+            parameter_transforms: Dictionary of parameter transformation settings
             state_names: Names of the state variables in the correct order
         """
         self.mechanistic_components = mechanistic_components
         self.nn_replacements = nn_replacements
+        self.trainable_parameters = trainable_parameters
+        self.parameter_transforms = parameter_transforms
         self.state_names = state_names
+
+    def _transform_parameter(self, name: str, value: jnp.ndarray) -> jnp.ndarray:
+        """Apply the appropriate transformation to a parameter."""
+        transform_info = self.parameter_transforms.get(name, {})
+        transform_type = transform_info.get('transform', 'none')
+        bounds = transform_info.get('bounds', None)
+
+        if transform_type == 'sigmoid' and bounds:
+            # Apply sigmoid transform to bound the parameter
+            lower, upper = bounds
+            return lower + (upper - lower) * jax.nn.sigmoid(value)
+        elif transform_type == 'softplus':
+            # Ensure parameter is positive
+            return jax.nn.softplus(value)
+        elif transform_type == 'exp':
+            # Exponential transform
+            return jnp.exp(value)
+        else:
+            # No transformation
+            return value
 
     def ode_function(self, t: float, y: Float[Array, "D"], args: Dict) -> Float[Array, "D"]:
         """
-        The ODE function that combines mechanistic and neural network components.
-
-        Args:
-            t: Current time
-            y: Current state (as an array)
-            args: Additional arguments
-
-        Returns:
-            Derivatives of states
+        The ODE function that combines mechanistic, neural network, and trainable parameter components.
         """
         # Convert state array to dictionary
         state_dict = {name: y[i] for i, name in enumerate(self.state_names)}
@@ -65,25 +85,15 @@ class HybridODESystem(eqx.Module):
         # Add static inputs
         inputs.update(args.get('static_inputs', {}))
 
-        # IMPORTANT: First compute neural network outputs
-        # This ensures they're available for mechanistic components that need them
+        # Add transformed trainable parameters to inputs
+        for name, param in self.trainable_parameters.items():
+            inputs[name] = self._transform_parameter(name, param)
+
+        # Compute neural network outputs
         for name, nn in self.nn_replacements.items():
             inputs[name] = nn(inputs)
 
-        # Process each component to calculate intermediate values
-        intermediate_values = {}
-        for name, component_fn in self.mechanistic_components.items():
-            # Skip if this component is replaced by a neural network
-            if name in self.nn_replacements:
-                continue
-
-            # Calculate component output using inputs that now include neural network outputs
-            intermediate_values[name] = component_fn(inputs)
-
-        # Add intermediate values to inputs
-        inputs.update(intermediate_values)
-
-        # Calculate state derivatives
+        # Process each component to calculate derivatives
         derivatives = []
         for state_name in self.state_names:
             if state_name in self.mechanistic_components:

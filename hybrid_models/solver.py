@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional, Tuple, Union, Callable
 import diffrax
 import jax
 import jax.numpy as jnp
+jax.config.update("jax_enable_x64", True)
 
 
 @dataclass
