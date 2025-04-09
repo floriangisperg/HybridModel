@@ -68,10 +68,10 @@ def test_get_step_size_controller():
     assert controller.rtol == 1e-4
     assert controller.atol == 1e-6
 
-    # Test adaptive controller
+    # Test adaptive controller (which now uses PIDController under the hood)
     config = SolverConfig(step_size_controller="adaptive")
     controller = config.get_step_size_controller()
-    assert isinstance(controller, diffrax.AdaptiveStepSizeController)
+    assert isinstance(controller, diffrax.PIDController)  # Now we expect a PIDController for 'adaptive' too
 
     # Test constant controller
     config = SolverConfig(step_size_controller="constant")
@@ -82,7 +82,6 @@ def test_get_step_size_controller():
     config = SolverConfig(step_size_controller="unknown")
     controller = config.get_step_size_controller()
     assert isinstance(controller, diffrax.PIDController)
-
 
 def test_to_dict():
     """Test conversion of SolverConfig to a dictionary for solve function."""
