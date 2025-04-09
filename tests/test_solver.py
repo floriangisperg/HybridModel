@@ -128,8 +128,9 @@ def test_solver_config_string_representation():
     # Check that the string contains important info
     assert "DOPRI5" in config_str
     assert "pid" in config_str
-    assert "1e-4" in config_str
-    assert "1e-8" in config_str
+    # Check for 0.0001 instead of 1e-4 in the string
+    assert "0.0001" in config_str
+    assert "1e-08" in config_str  # or "1e-8"
 
 
 class MockModel:
