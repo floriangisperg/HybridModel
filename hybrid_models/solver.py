@@ -58,7 +58,9 @@ class SolverConfig:
         if self.step_size_controller.lower() == "pid":
             return diffrax.PIDController(rtol=self.rtol, atol=self.atol)
         elif self.step_size_controller.lower() == "adaptive":
-            return diffrax.AdaptiveStepSizeController(rtol=self.rtol, atol=self.atol)
+            # Use diffrax.PIDController instead of the non-existent AdaptiveStepSizeController
+            # PIDController is a type of adaptive step size controller
+            return diffrax.PIDController(rtol=self.rtol, atol=self.atol)
         elif self.step_size_controller.lower() == "constant":
             return diffrax.ConstantStepSize()
         else:

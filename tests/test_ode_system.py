@@ -66,10 +66,12 @@ def test_hybrid_ode_system_initialization():
 
     state_names = ['X', 'Y', 'Z', 'W']
 
-    # Create the ODE system
+    # Create the ODE system - add empty dicts for the new required parameters
     ode_system = HybridODESystem(
         mechanistic_components=mechanistic_components,
         nn_replacements=nn_replacements,
+        trainable_parameters={},  # Add empty dict for trainable parameters
+        parameter_transforms={},  # Add empty dict for parameter transforms
         state_names=state_names
     )
 
@@ -93,10 +95,12 @@ def test_ode_function_mechanistic_only():
         'Y': y_growth
     }
 
-    # Create the ODE system
+    # Create the ODE system - add empty dicts for the new required parameters
     ode_system = HybridODESystem(
         mechanistic_components=mechanistic_components,
         nn_replacements={},
+        trainable_parameters={},  # Add empty dict for trainable parameters
+        parameter_transforms={},  # Add empty dict for parameter transforms
         state_names=['X', 'Y']
     )
 
@@ -140,10 +144,12 @@ def test_ode_function_with_nn_replacement():
         'growth_factor': ConstantNN(0.5)  # Always adds 0.5 to X growth
     }
 
-    # Create the ODE system
+    # Create the ODE system - add empty dicts for the new required parameters
     ode_system = HybridODESystem(
         mechanistic_components=mechanistic_components,
         nn_replacements=nn_replacements,
+        trainable_parameters={},  # Add empty dict for trainable parameters
+        parameter_transforms={},  # Add empty dict for parameter transforms
         state_names=['X', 'Y']
     )
 
@@ -172,10 +178,12 @@ def test_ode_function_with_time_dependent_inputs():
         'X': x_growth
     }
 
-    # Create the ODE system
+    # Create the ODE system - add empty dicts for the new required parameters
     ode_system = HybridODESystem(
         mechanistic_components=mechanistic_components,
         nn_replacements={},
+        trainable_parameters={},  # Add empty dict for trainable parameters
+        parameter_transforms={},  # Add empty dict for parameter transforms
         state_names=['X']
     )
 
@@ -217,10 +225,12 @@ def test_solve_simple_exponential_growth(simple_dataset):
         'P': p_formation
     }
 
-    # Create the ODE system
+    # Create the ODE system - add empty dicts for the new required parameters
     ode_system = HybridODESystem(
         mechanistic_components=mechanistic_components,
         nn_replacements={},
+        trainable_parameters={},  # Add empty dict for trainable parameters
+        parameter_transforms={},  # Add empty dict for parameter transforms
         state_names=['X', 'P']
     )
 
