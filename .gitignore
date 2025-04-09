@@ -3,3 +3,7 @@
 *.json
 *.txt
 *.csv
+*.xml
+*.eqx
+*.pkl
+*.coverage
