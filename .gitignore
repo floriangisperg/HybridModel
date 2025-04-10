@@ -7,3 +7,4 @@
 *.eqx
 *.pkl
 *.coverage
+examples/
