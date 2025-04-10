@@ -309,7 +309,7 @@ def main():
         loss_fn=loss_fn,
         num_epochs=2500,  # Reduced from 5000 for example
         learning_rate=1e-3,
-        early_stopping_patience=250,  # Reduced from 2500 for example
+        early_stopping_patience=500,  # Reduced from 2500 for example
         verbose=True
     )
 

@@ -21,6 +21,7 @@ jupyterlab = "^4.3.6"
 jaxtyping = "^0.3.0"
 matplotlib = "3.9.0"
 pytest = "^8.3.5"
+pylint = "^3.3.6"
 
 
 [build-system]

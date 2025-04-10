@@ -215,13 +215,13 @@ def main():
     # Configure model architecture
     ann_config = {
         'growth_rate': {
-            'hidden_dims': [64, 32, 16],  # Customized architecture
+            'hidden_dims': [32, 32, 32],  # Customized architecture
             'output_activation': 'soft_sign',
             'input_features': ['X', 'P', 'temp', 'feed', 'inductor_mass'],
             'seed': 42
         },
         'product_rate': {
-            'hidden_dims': [32, 32],  # Different architecture
+            'hidden_dims': [32, 32, 32],  # Different architecture
             'output_activation': 'softplus',
             'input_features': ['X', 'P', 'temp', 'feed', 'inductor_mass'],
             'seed': 43
@@ -282,7 +282,7 @@ def main():
         num_epochs=5000,
         learning_rate=1e-3,
         early_stopping_patience=2500,
-        component_weights={'X': 1.0, 'P': 1.5},  # Weight product prediction higher
+        component_weights={'X': 1.0, 'P': 1.0},  # Weight product prediction higher
         loss_metric=MSE,
         solver_config=solver_config,
         save_checkpoints=True
