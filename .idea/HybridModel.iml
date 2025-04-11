@@ -8,6 +8,7 @@
       <excludeFolder url="file://$MODULE_DIR$/examples/results_pendulum_hybrid" />
       <excludeFolder url="file://$MODULE_DIR$/examples/results_pendulum_mechanistic" />
       <excludeFolder url="file://$MODULE_DIR$/examples/results_pendulum_neural" />
+      <excludeFolder url="file://$MODULE_DIR$/archive" />
     </content>
     <orderEntry type="jdk" jdkName="Poetry (HybridModel)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
