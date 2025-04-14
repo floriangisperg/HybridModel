@@ -4,6 +4,7 @@ Experiment management for hybrid model training and evaluation.
 This module provides classes and functions to manage the end-to-end
 workflow for hybrid model experiments, from data loading to evaluation.
 """
+
 import os
 import time
 from typing import Dict, List, Any, Optional, Callable, Tuple, Union
@@ -35,7 +36,7 @@ class ExperimentManager:
         train_datasets: List[Dict],
         test_datasets: Optional[List[Dict]] = None,
         output_dir: str = "results",
-        experiment_name: Optional[str] = None
+        experiment_name: Optional[str] = None,
     ):
         """
         Initialize the experiment manager.
@@ -73,7 +74,7 @@ class ExperimentManager:
         state_names: List[str],
         loss_metric: LossMetric = MSE,
         component_weights: Optional[Dict[str, float]] = None,
-        solver_config: Optional[SolverConfig] = None
+        solver_config: Optional[SolverConfig] = None,
     ) -> Callable:
         """
         Create a loss function for model training.
@@ -100,7 +101,7 @@ class ExperimentManager:
             solve_fn=custom_solve_fn,
             state_names=state_names,
             loss_metric=loss_metric,
-            component_weights=component_weights
+            component_weights=component_weights,
         )
 
         return loss_fn
@@ -124,7 +125,7 @@ class ExperimentManager:
             model=self.model,
             model_config=self.model_config,
             norm_params=self.norm_params,
-            filepath=filepath
+            filepath=filepath,
         )
 
     def save_normalization_parameters(self, filepath: Optional[str] = None) -> str:
@@ -163,7 +164,7 @@ class ExperimentManager:
             "experiment_name": self.experiment_name,
             "training_time": time.strftime("%Y-%m-%d %H:%M:%S"),
             "model_config": self.model_config.to_dict(),
-            "norm_params": self.norm_params
+            "norm_params": self.norm_params,
         }
 
         # Add solver config if available
@@ -173,7 +174,7 @@ class ExperimentManager:
                 "step_size_controller": self.solver_config.step_size_controller,
                 "rtol": self.solver_config.rtol,
                 "atol": self.solver_config.atol,
-                "max_steps": self.solver_config.max_steps
+                "max_steps": self.solver_config.max_steps,
             }
 
         return save_model(self.trained_model, filepath, metadata)
@@ -186,7 +187,9 @@ class ExperimentManager:
             Dictionary with paths to all saved files
         """
         if self.trained_model is None:
-            raise ValueError("Model must be trained before saving results. Call train() first.")
+            raise ValueError(
+                "Model must be trained before saving results. Call train() first."
+            )
 
         # Convert model config and solver config to dictionaries
         model_config_dict = self.model_config.to_dict()
@@ -198,7 +201,7 @@ class ExperimentManager:
                 "step_size_controller": self.solver_config.step_size_controller,
                 "rtol": self.solver_config.rtol,
                 "atol": self.solver_config.atol,
-                "max_steps": self.solver_config.max_steps
+                "max_steps": self.solver_config.max_steps,
             }
 
         # Get evaluation metrics
@@ -206,7 +209,7 @@ class ExperimentManager:
         if self.training_metrics or self.test_metrics:
             metrics_dict = {
                 "training": self.training_metrics,
-                "test": self.test_metrics
+                "test": self.test_metrics,
             }
 
         # Save everything
@@ -217,7 +220,7 @@ class ExperimentManager:
             model_config=model_config_dict,
             norm_params=self.norm_params,
             solver_config=solver_config_dict,
-            metrics=metrics_dict
+            metrics=metrics_dict,
         )
 
         # Generate additional documentation
@@ -232,13 +235,14 @@ class ExperimentManager:
         num_epochs: int = 1000,
         learning_rate: float = 1e-3,
         early_stopping_patience: Optional[int] = None,
+        early_stopping_min_delta: float = 1e-5,  # <--- ADD THIS ARGUMENT with default
         component_weights: Optional[Dict[str, float]] = None,
         loss_metric: LossMetric = MSE,
         validation_datasets: Optional[List[Dict]] = None,
         solver_config: Optional[SolverConfig] = None,
         save_checkpoints: bool = False,
         checkpoint_interval: int = 100,
-        verbose: bool = True
+        verbose: bool = True,
     ) -> Any:
         """
         Train the model with enhanced options.
@@ -268,7 +272,7 @@ class ExperimentManager:
             state_names=state_names,
             loss_metric=loss_metric,
             component_weights=component_weights,
-            solver_config=solver_config
+            solver_config=solver_config,
         )
 
         # Train the model
@@ -277,15 +281,18 @@ class ExperimentManager:
             start_time = time.time()
 
         if validation_datasets:
-            self.trained_model, self.training_history, self.validation_history = train_hybrid_model(
-                model=self.model,
-                datasets=self.train_datasets,
-                loss_fn=loss_fn,
-                num_epochs=num_epochs,
-                learning_rate=learning_rate,
-                early_stopping_patience=early_stopping_patience,
-                validation_datasets=validation_datasets,
-                verbose=verbose
+            self.trained_model, self.training_history, self.validation_history = (
+                train_hybrid_model(
+                    model=self.model,
+                    datasets=self.train_datasets,
+                    loss_fn=loss_fn,
+                    num_epochs=num_epochs,
+                    learning_rate=learning_rate,
+                    early_stopping_patience=early_stopping_patience,
+                    early_stopping_min_delta=early_stopping_min_delta,
+                    validation_datasets=validation_datasets,
+                    verbose=verbose,
+                )
             )
         else:
             self.trained_model, self.training_history = train_hybrid_model(
@@ -295,7 +302,8 @@ class ExperimentManager:
                 num_epochs=num_epochs,
                 learning_rate=learning_rate,
                 early_stopping_patience=early_stopping_patience,
-                verbose=verbose
+                early_stopping_min_delta=early_stopping_min_delta,
+                verbose=verbose,
             )
 
         if verbose:
@@ -313,10 +321,10 @@ class ExperimentManager:
         return self.trained_model
 
     def evaluate(
-            self,
-            state_names: Optional[List[str]] = None,
-            solver_config: Optional[SolverConfig] = None,
-            verbose: bool = True
+        self,
+        state_names: Optional[List[str]] = None,
+        solver_config: Optional[SolverConfig] = None,
+        verbose: bool = True,
     ) -> Dict:
         """
         Evaluate the trained model.
@@ -330,7 +338,9 @@ class ExperimentManager:
             Dictionary of evaluation metrics
         """
         if self.trained_model is None:
-            raise ValueError("Model must be trained before evaluation. Call train() first.")
+            raise ValueError(
+                "Model must be trained before evaluation. Call train() first."
+            )
 
         # Use model state names if none provided
         if state_names is None:
@@ -344,7 +354,9 @@ class ExperimentManager:
                 # Fall back to evaluation config if no training config is available
                 solver_config = SolverConfig.for_evaluation()
                 if verbose:
-                    print("Warning: No training solver configuration found. Using default evaluation solver.")
+                    print(
+                        "Warning: No training solver configuration found. Using default evaluation solver."
+                    )
 
         # Create a custom solve function with this solver config
         def custom_solve_fn(model, dataset):
@@ -352,7 +364,9 @@ class ExperimentManager:
 
         # Evaluate on training data
         if verbose:
-            print(f"Evaluating on training data using solver: {solver_config.solver_type}...")
+            print(
+                f"Evaluating on training data using solver: {solver_config.solver_type}..."
+            )
 
         self.training_metrics = evaluate_model_performance(
             model=self.trained_model,
@@ -363,13 +377,15 @@ class ExperimentManager:
             save_metrics=True,
             output_dir=self.output_dir,
             metrics_filename="training_metrics.txt",
-            verbose=verbose
+            verbose=verbose,
         )
 
         # Evaluate on test data if available
         if self.test_datasets:
             if verbose:
-                print(f"Evaluating on test data using solver: {solver_config.solver_type}...")
+                print(
+                    f"Evaluating on test data using solver: {solver_config.solver_type}..."
+                )
 
             self.test_metrics = evaluate_model_performance(
                 model=self.trained_model,
@@ -380,20 +396,17 @@ class ExperimentManager:
                 save_metrics=True,
                 output_dir=self.output_dir,
                 metrics_filename="test_metrics.txt",
-                verbose=verbose
+                verbose=verbose,
             )
 
-        return {
-            'training': self.training_metrics,
-            'test': self.test_metrics
-        }
+        return {"training": self.training_metrics, "test": self.test_metrics}
 
     def visualize(
-            self,
-            state_names: Optional[List[str]] = None,
-            state_labels: Optional[Dict[str, str]] = None,
-            component_names: Optional[List[str]] = None,
-            solver_config: Optional[SolverConfig] = None
+        self,
+        state_names: Optional[List[str]] = None,
+        state_labels: Optional[Dict[str, str]] = None,
+        component_names: Optional[List[str]] = None,
+        solver_config: Optional[SolverConfig] = None,
     ):
         """
         Visualize training results and model predictions.
@@ -405,7 +418,9 @@ class ExperimentManager:
             solver_config: Optional solver configuration (defaults to the same config used in training)
         """
         if self.trained_model is None:
-            raise ValueError("Model must be trained before visualization. Call train() first.")
+            raise ValueError(
+                "Model must be trained before visualization. Call train() first."
+            )
 
         # Use model state names if none provided
         if state_names is None:
@@ -418,7 +433,9 @@ class ExperimentManager:
             else:
                 # Fall back to evaluation config if no training config is available
                 solver_config = SolverConfig.for_evaluation()
-                print("Warning: No training solver configuration found. Using default evaluation solver.")
+                print(
+                    "Warning: No training solver configuration found. Using default evaluation solver."
+                )
 
         # Create a custom solve function with this solver config
         def custom_solve_fn(model, dataset):
@@ -435,7 +452,7 @@ class ExperimentManager:
             output_dir=self.output_dir,
             state_labels=state_labels,
             component_names=component_names,
-            validation_history=self.validation_history
+            validation_history=self.validation_history,
         )
 
     def save_results_summary(self, filename: str = "experiment_summary.txt"):
@@ -447,7 +464,7 @@ class ExperimentManager:
         """
         filepath = os.path.join(self.output_dir, filename)
 
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             f.write(f"=== Experiment: {self.experiment_name} ===\n\n")
 
             # Training parameters
@@ -461,17 +478,24 @@ class ExperimentManager:
             f.write("\nPerformance Metrics:\n")
 
             # Add training metrics
-            if self.training_metrics and 'aggregate' in self.training_metrics:
+            if self.training_metrics and "aggregate" in self.training_metrics:
                 f.write("  Training Data:\n")
-                for state, metrics in self.training_metrics['aggregate'].items():
-                    f.write(f"    {state}: R² = {metrics['r2']:.4f}, RMSE = {metrics['rmse']:.4f}\n")
+                for state, metrics in self.training_metrics["aggregate"].items():
+                    f.write(
+                        f"    {state}: R² = {metrics['r2']:.4f}, RMSE = {metrics['rmse']:.4f}\n"
+                    )
 
             # Add test metrics
-            if self.test_metrics and 'aggregate' in self.test_metrics:
+            if self.test_metrics and "aggregate" in self.test_metrics:
                 f.write("  Test Data:\n")
-                for state, metrics in self.test_metrics['aggregate'].items():
-                    f.write(f"    {state}: R² = {metrics['r2']:.4f}, RMSE = {metrics['rmse']:.4f}\n")
+                for state, metrics in self.test_metrics["aggregate"].items():
+                    f.write(
+                        f"    {state}: R² = {metrics['r2']:.4f}, RMSE = {metrics['rmse']:.4f}\n"
+                    )
 
             # Add timestamp
             import datetime
-            f.write(f"\nSummary generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+
+            f.write(
+                f"\nSummary generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            )
