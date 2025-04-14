@@ -106,11 +106,6 @@ def load_bioprocess_data(
 ) -> DatasetManager:
     """Loads and preprocesses bioprocess data using DatasetManager and VariableRegistry."""
     print(f"Loading data from: {file_path}")
-    try:
-        data = pd.read_excel(file_path)
-    except FileNotFoundError:
-        print(f"Error: Data file not found at {file_path}")
-        raise
 
     manager = DatasetManager()
     manager.load_from_dataframe(
