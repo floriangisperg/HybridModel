@@ -5,6 +5,7 @@ This module provides utilities for configuring neural networks and
 generating human-readable documentation of hybrid models.
 """
 
+import textwrap
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Callable, Union
 import jax
@@ -127,19 +128,15 @@ class ModelConfig:
 def describe_model(model, model_config: ModelConfig, norm_params: Dict) -> str:
     """
     Generate a detailed text description of the model structure.
-
-    Args:
-        model: The hybrid model instance
-        model_config: The model configuration
-        norm_params: Normalization parameters
-
-    Returns:
-        Formatted string with model description
+    ... (Args remain the same) ...
     """
     doc = []
     doc.append("=" * 60)
     doc.append("HYBRID MODEL DOCUMENTATION")
     doc.append("=" * 60)
+    doc.append(
+        f"Generated for ModelConfig defined with states: {model_config.state_names}"
+    )
     doc.append("")
 
     # State variables
@@ -150,48 +147,120 @@ def describe_model(model, model_config: ModelConfig, norm_params: Dict) -> str:
     doc.append("")
 
     # Mechanistic components
-    doc.append("MECHANISTIC COMPONENTS:")
+    doc.append("MECHANISTIC COMPONENTS (State Equations):")
     doc.append("-" * 30)
-    for name, func in model_config.mechanistic_components.items():
-        doc.append(f"Component: {name}")
-        # Try to get the function source code
-        try:
-            source = inspect.getsource(func)
-            # Clean up the source code a bit
-            source = "\n".join(["    " + line for line in source.split("\n")])
-            doc.append("Source:")
-            doc.append(source)
-        except:
-            doc.append("    <Source code not available>")
-        doc.append("")
+    if model_config.mechanistic_components:
+        for name, func in model_config.mechanistic_components.items():
+            # Only describe components that define state derivatives
+            if name in model_config.state_names:
+                doc.append(f"Component for d{name}/dt:")
+                try:
+                    func_name = func.__name__
+                    if func_name == "<lambda>":
+                        func_name = "Lambda Function"
+                except AttributeError:
+                    func_name = "Callable Object"
+                doc.append(f"  Function: {func_name}")
+
+                # --- REVISED SOURCE CODE DISPLAY ---
+                try:
+                    source = inspect.getsource(func)
+                    # Dedent the source code to remove leading whitespace common to all lines
+                    dedented_source = textwrap.dedent(source)
+                    # Optional: Limit the number of lines shown or strip decorators/docstrings
+                    source_lines = dedented_source.strip().split("\n")
+                    # Remove potential signature line if present
+                    if source_lines and source_lines[0].strip().startswith("def "):
+                        source_lines = source_lines[1:]
+                    # Remove docstring if present (simple check for triple quotes)
+                    if source_lines and source_lines[0].strip().startswith(
+                        ('"""', "'''")
+                    ):
+                        end_docstring = -1
+                        for idx, line in enumerate(source_lines):
+                            if line.strip().endswith(('"""', "'''")):
+                                end_docstring = idx
+                                break
+                        if end_docstring != -1:
+                            source_lines = source_lines[end_docstring + 1 :]
+
+                    # Indent the relevant source lines for display
+                    formatted_source = "\n".join(
+                        ["    " + line for line in source_lines if line.strip()]
+                    )  # Ignore empty lines
+                    if formatted_source:
+                        doc.append("  Implementation:")
+                        doc.append(formatted_source)
+                    else:
+                        doc.append("  <Could not extract source body>")
+
+                except (TypeError, OSError, IOError):
+                    doc.append("  <Source code not available>")
+                doc.append("")
+                # --- END REVISED SOURCE CODE DISPLAY ---
+    else:
+        doc.append("  None defined in ModelConfig.")
+    doc.append("")
 
     # Neural network components
     doc.append("NEURAL NETWORK COMPONENTS:")
     doc.append("-" * 30)
-    for nn_config in model_config.neural_networks:
-        doc.append(f"Neural Network: {nn_config.name}")
-        doc.append(f"  Input Features: {', '.join(nn_config.input_features)}")
-        doc.append(f"  Architecture: {nn_config.hidden_dims}")
+    if model_config.neural_networks:
+        for nn_config in model_config.neural_networks:
+            doc.append(f"Neural Network replacing/defining: '{nn_config.name}'")
+            doc.append(f"  Input Features: {', '.join(nn_config.input_features)}")
+            doc.append(f"  Architecture (Hidden Dims): {nn_config.hidden_dims}")
 
-        # Get activation name
-        activation = nn_config.output_activation
-        if isinstance(activation, str):
-            activation_name = activation
-        elif activation is None:
-            activation_name = "None (linear)"
-        else:
-            activation_name = (
-                activation.__name__ if hasattr(activation, "__name__") else "custom"
-            )
+            # Get activation name
+            activation = nn_config.output_activation
+            if isinstance(activation, str):
+                activation_name = activation
+            elif activation is None:
+                activation_name = "None (linear)"
+            else:  # If it's a callable function
+                activation_name = (
+                    activation.__name__
+                    if hasattr(activation, "__name__")
+                    else "Custom Callable"
+                )
 
-        doc.append(f"  Output Activation: {activation_name}")
-        doc.append("")
+            doc.append(f"  Output Activation: {activation_name}")
+            doc.append(f"  Initialization Seed Used: {nn_config.seed}")  # Add seed info
+            doc.append("")
+    else:
+        doc.append("  None defined in ModelConfig.")
+    doc.append("")
 
-    # Normalization parameters
-    doc.append("NORMALIZATION PARAMETERS:")
+    # --- ADD THIS NEW SECTION ---
+    doc.append("TRAINABLE PARAMETERS:")
     doc.append("-" * 30)
-    for key, value in norm_params.items():
-        doc.append(f"{key}: {value}")
+    if model_config.trainable_parameters:
+        for name, param_info in model_config.trainable_parameters.items():
+            doc.append(f"Parameter Name: '{name}'")
+            doc.append(f"  Initial Value: {param_info.get('initial_value', 'N/A')}")
+            bounds = param_info.get("bounds")
+            if bounds:
+                doc.append(f"  Bounds: {bounds}")
+            transform = param_info.get("transform", "none")
+            if transform != "none":
+                doc.append(f"  Transformation: {transform}")
+            doc.append("")
+    else:
+        doc.append("  None defined in ModelConfig.")
+    doc.append("")
+    # --- END NEW SECTION ---
+
+    # Normalization parameters (Optional: Could be long)
+    # doc.append("NORMALIZATION PARAMETERS:")
+    # doc.append("-" * 30)
+    # if norm_params:
+    #     for key, value in norm_params.items():
+    #         doc.append(f"  {key}: {value:.4f}") # Format float values
+    # else:
+    #     doc.append("  None provided.")
+    # doc.append("")
+
+    doc.append("=" * 60)
 
     return "\n".join(doc)
 
