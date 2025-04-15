@@ -7,5 +7,4 @@
 *.eqx
 *.pkl
 *.coverage
-examples/
 archive/

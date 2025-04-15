@@ -24,7 +24,6 @@ from .visualization import (
 # Evaluation
 from .evaluation_utils import (
     evaluate_model_performance,
-    aggregate_evaluation_results,
     create_metrics_summary,
     compare_models,
 )
