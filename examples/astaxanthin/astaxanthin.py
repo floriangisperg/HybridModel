@@ -238,7 +238,7 @@ TRAINING_PARAMS = {
     "early_stopping_patience": 3000,
     "early_stopping_min_delta": 1e-6,
     "loss_metric": MSE,
-    "component_weights": {'X': 1.0, 'S': 1.0, 'P': 5.0}, # Equal weight for this example
+    "component_weights": {'X': 5.0, 'S': 5.0, 'P': 5.0}, # Equal weight for this example
     "save_checkpoints": True,
     "verbose": True,
 }

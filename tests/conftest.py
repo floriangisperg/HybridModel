@@ -1,9 +1,20 @@
 """Common test fixtures for the hybrid models tests."""
+
 import pytest
+import matplotlib
 import jax
 import jax.numpy as jnp
 import numpy as np
 from hybrid_models import HybridModelBuilder, create_initial_random_key
+
+import matplotlib
+import pytest
+
+
+# Fixture to set backend, runs automatically for the session
+@pytest.fixture(scope="session", autouse=True)
+def set_matplotlib_backend():
+    matplotlib.use("Agg")  # Use non-interactive backen
 
 
 @pytest.fixture
@@ -16,12 +27,12 @@ def random_key():
 def norm_params():
     """Sample normalization parameters for testing."""
     return {
-        'X_mean': 5.0,
-        'X_std': 2.0,
-        'P_mean': 1.0,
-        'P_std': 0.5,
-        'temp_mean': 37.0,
-        'temp_std': 5.0,
+        "X_mean": 5.0,
+        "X_std": 2.0,
+        "P_mean": 1.0,
+        "P_std": 0.5,
+        "temp_mean": 37.0,
+        "temp_std": 5.0,
     }
 
 
@@ -35,25 +46,22 @@ def simple_dataset():
     X = 1.0 + 0.5 * times
 
     # Simple product formation for P
-    P = 0.1 * times ** 2
+    P = 0.1 * times**2
 
     # Control inputs
     temp = 37.0 * jnp.ones_like(times)
     feed = 0.1 * times
 
     return {
-        'X_true': X,
-        'P_true': P,
-        'times': times,
-        'initial_state': {
-            'X': float(X[0]),
-            'P': float(P[0])
+        "X_true": X,
+        "P_true": P,
+        "times": times,
+        "initial_state": {"X": float(X[0]), "P": float(P[0])},
+        "time_dependent_inputs": {
+            "temp": (times, temp),
+            "feed": (times, feed),
+            "inductor_switch": (times, jnp.ones_like(times)),  # Always on
         },
-        'time_dependent_inputs': {
-            'temp': (times, temp),
-            'feed': (times, feed),
-            'inductor_switch': (times, jnp.ones_like(times)),  # Always on
-        }
     }
 
 
@@ -66,44 +74,44 @@ def simple_hybrid_model(norm_params, random_key):
     builder.set_normalization_params(norm_params)
 
     # Add state variables
-    builder.add_state('X')  # Biomass
-    builder.add_state('P')  # Product
+    builder.add_state("X")  # Biomass
+    builder.add_state("P")  # Product
 
     # Simple mechanistic growth model
     def biomass_ode(inputs):
-        X = inputs['X']
-        mu = inputs['growth_rate']  # Will be replaced by neural network
+        X = inputs["X"]
+        mu = inputs["growth_rate"]  # Will be replaced by neural network
         return mu * X
 
     # Simple mechanistic product formation
     def product_ode(inputs):
-        X = inputs['X']
-        qp = inputs['product_rate']  # Will be replaced by neural network
-        inductor_switch = inputs.get('inductor_switch', 0.0)
+        X = inputs["X"]
+        qp = inputs["product_rate"]  # Will be replaced by neural network
+        inductor_switch = inputs.get("inductor_switch", 0.0)
         return qp * X * inductor_switch
 
     # Add mechanistic components
-    builder.add_mechanistic_component('X', biomass_ode)
-    builder.add_mechanistic_component('P', product_ode)
+    builder.add_mechanistic_component("X", biomass_ode)
+    builder.add_mechanistic_component("P", product_ode)
 
     # Split key for two neural networks
     key1, key2 = jax.random.split(random_key)
 
     # Replace growth rate with neural network
     builder.replace_with_nn(
-        name='growth_rate',
-        input_features=['X', 'temp'],
+        name="growth_rate",
+        input_features=["X", "temp"],
         hidden_dims=[4, 4],  # Small network for testing
-        key=key1
+        key=key1,
     )
 
     # Replace product formation rate with neural network
     builder.replace_with_nn(
-        name='product_rate',
-        input_features=['X', 'P', 'temp'],
+        name="product_rate",
+        input_features=["X", "P", "temp"],
         hidden_dims=[4, 4],  # Small network for testing
         output_activation=jax.nn.softplus,  # Ensure non-negative rate
-        key=key2
+        key=key2,
     )
 
     # Build and return the model
