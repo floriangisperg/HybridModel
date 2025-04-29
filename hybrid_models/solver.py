@@ -4,11 +4,13 @@ Solver configuration and utilities for hybrid models.
 This module provides classes and functions to configure and manage
 ODE solvers for hybrid modeling.
 """
+
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, Tuple, Union, Callable
 import diffrax
 import jax
 import jax.numpy as jnp
+
 jax.config.update("jax_enable_x64", True)
 
 
@@ -17,6 +19,7 @@ class SolverConfig:
     """
     Configuration for ODE solvers with extensive customization options.
     """
+
     # Solver selection
     solver_type: str = "tsit5"  # Options: "tsit5", "dopri5", "euler", "heun", etc.
 
@@ -75,24 +78,24 @@ class SolverConfig:
         """
         # Create dictionary with basic parameters
         result = {
-            'solver': self.get_solver(),
-            'rtol': self.rtol,
-            'atol': self.atol,
-            'dt0': self.dt0,
-            'max_steps': self.max_steps,
-            'stepsize_controller': self.get_step_size_controller()
+            "solver": self.get_solver(),
+            "rtol": self.rtol,
+            "atol": self.atol,
+            "dt0": self.dt0,
+            "max_steps": self.max_steps,
+            "stepsize_controller": self.get_step_size_controller(),
         }
 
         # If using constant step size, add dt
         if self.step_size_controller.lower() == "constant":
-            result['dt'] = self.dt
+            result["dt"] = self.dt
 
         # Add any extra options
         result.update(self.extra_options)
         return result
 
     @classmethod
-    def for_training(cls, solver_type: str = "tsit5") -> 'SolverConfig':
+    def for_training(cls, solver_type: str = "dopri5") -> "SolverConfig":
         """
         Create a solver configuration optimized for training.
 
@@ -103,11 +106,11 @@ class SolverConfig:
             step_size_controller="pid",
             rtol=1e-2,
             atol=1e-4,
-            max_steps=500000
+            max_steps=5000000,
         )
 
     @classmethod
-    def for_evaluation(cls, solver_type: str = "dopri5") -> 'SolverConfig':
+    def for_evaluation(cls, solver_type: str = "dopri5") -> "SolverConfig":
         """
         Create a solver configuration optimized for high-accuracy evaluation.
 
@@ -127,11 +130,11 @@ class SolverConfig:
             step_size_controller="pid",
             rtol=1e-4,
             atol=1e-8,
-            max_steps=1000000
+            max_steps=1000000,
         )
 
     @classmethod
-    def fixed_step(cls, dt: float = 0.1, solver_type: str = "tsit5") -> 'SolverConfig':
+    def fixed_step(cls, dt: float = 0.1, solver_type: str = "tsit5") -> "SolverConfig":
         """
         Create a configuration with fixed step size.
 
@@ -142,7 +145,7 @@ class SolverConfig:
             solver_type=solver_type,
             step_size_controller="constant",
             dt=dt,
-            max_steps=1000000
+            max_steps=1000000,
         )
 
     def __str__(self) -> str:
@@ -155,6 +158,7 @@ class SolverConfig:
             f"rtol: {self.rtol}, atol: {self.atol}, "
             f"max_steps: {self.max_steps}"
         )
+
 
 def solve_for_dataset(model, dataset, solver_config: Optional[SolverConfig] = None):
     """
@@ -177,14 +181,14 @@ def solve_for_dataset(model, dataset, solver_config: Optional[SolverConfig] = No
 
     # Solve the ODE system
     solution = model.solve(
-        initial_state=dataset['initial_state'],
-        t_span=(dataset['times'][0], dataset['times'][-1]),
-        evaluation_times=dataset['times'],
+        initial_state=dataset["initial_state"],
+        t_span=(dataset["times"][0], dataset["times"][-1]),
+        evaluation_times=dataset["times"],
         args={
-            'time_dependent_inputs': dataset.get('time_dependent_inputs', {}),
-            'static_inputs': dataset.get('static_inputs', {})
+            "time_dependent_inputs": dataset.get("time_dependent_inputs", {}),
+            "static_inputs": dataset.get("static_inputs", {}),
         },
-        **solver_params
+        **solver_params,
     )
 
     return solution

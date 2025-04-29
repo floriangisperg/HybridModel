@@ -2,7 +2,7 @@ import jax.numpy as jnp
 
 from typing import Dict, List, Callable, Optional, Tuple
 from .nn_module import ConfigurableNN
-from .ode_system import HybridODESystem, get_value_at_time
+from .ode_system import HybridODESystem
 
 # Import updated training module with validation support
 from .training import train_hybrid_model

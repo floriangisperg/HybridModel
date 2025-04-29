@@ -108,7 +108,7 @@ TRAINABLE_PARAMS_CONFIG = {}
 
 # --- Solver Configuration ---
 SOLVER_CONFIG_PARAMS = {
-    "solver_type": "tsit5", # Default explicit RK solver
+    "solver_type": "dopri5", # Default explicit RK solver
     "step_size_controller": "pid",
     "rtol": 1e-2, # Relaxed tolerances for potentially faster training
     "atol": 1e-4,
@@ -309,7 +309,7 @@ def main():
             early_stopping_min_delta=TRAINING_PARAMS["early_stopping_min_delta"],
             loss_metric=TRAINING_PARAMS["loss_metric"],
             component_weights=TRAINING_PARAMS["component_weights"],
-            validation_datasets=test_datasets if test_datasets else None,
+            validation_datasets= None, #or: test_datasets if test_datasets else None
             solver_config=solver_config_obj,
             save_checkpoints=TRAINING_PARAMS["save_checkpoints"],
             verbose=TRAINING_PARAMS["verbose"],
