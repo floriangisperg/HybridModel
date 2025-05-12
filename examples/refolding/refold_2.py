@@ -135,7 +135,7 @@ def build_refolding_model(norm_params, key):
     builder.replace_with_nn(
         name="k_fold",
         input_features=["native_protein", "dtt", "gssg", "dilution", "ph", "urea"],
-        hidden_dims=[32, 32, 32],
+        hidden_dims=[16,32,16],
         output_activation=jax.nn.softplus,  # Ensure positive rate constant
         key=key1,
     )
@@ -144,7 +144,7 @@ def build_refolding_model(norm_params, key):
     builder.replace_with_nn(
         name="k_yield",
         input_features=["yield", "dtt", "gssg", "dilution", "ph", "urea"],
-        hidden_dims=[32, 32, 32],
+        hidden_dims=[8],
         output_activation=jax.nn.softplus,  # Ensure positive rate constant
         key=key2,
     )
@@ -173,7 +173,7 @@ trained_model, history = train_hybrid_model(
     datasets=train_datasets,
     loss_fn=loss_fn,
     num_epochs=20000,
-    learning_rate=5e-4,
+    learning_rate=7e-4,
     early_stopping_patience=5000,
     verbose=True,
 )
