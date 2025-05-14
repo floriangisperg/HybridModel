@@ -86,7 +86,7 @@ NEURAL_NETWORK_CONFIGS = [
     NeuralNetworkConfig(
         name="a_fold",  # Changed from k_fold to a_fold
         # Removed urea from inputs as it's used directly in the mechanistic formula
-        input_features=["dtt", "gssg", "dilution", "ph"],
+        input_features=["dtt", "gssg", "dilution", "ph", "native_protein", "urea"],
         hidden_dims=[32,32],
         output_activation="softplus",  # Ensure positive rate
         seed=MASTER_SEED
