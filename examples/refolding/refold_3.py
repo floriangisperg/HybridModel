@@ -67,7 +67,7 @@ DATA_FILE_PATH = os.path.join(DATA_DIR, DATA_FILE_NAME)
 DATA_SCHEMA_CONFIG = {
     "time_column": "Refolding Time [min]",
     "run_id_column": "Experiment ID",
-    "train_ratio": 0.6,  # Let DatasetManager split by ratio
+    "train_ratio": 0.7,  # Let DatasetManager split by ratio
     "variables": [
         # (column_name, type, internal_name, is_output, calculate_rate)
         ("Native Product Monomer [mg/L]", VariableType.STATE, "native_protein", True, False),
@@ -86,8 +86,8 @@ NEURAL_NETWORK_CONFIGS = [
     NeuralNetworkConfig(
         name="a_fold",  # Changed from k_fold to a_fold
         # Removed urea from inputs as it's used directly in the mechanistic formula
-        input_features=["dtt", "gssg", "dilution", "ph", "native_protein", "urea"],
-        hidden_dims=[32,32],
+        input_features=["dtt", "gssg", "initial_protein", "ph", "native_protein", "urea"],
+        hidden_dims=[10,10,10,10],
         output_activation="softplus",  # Ensure positive rate
         seed=MASTER_SEED
     )
@@ -113,12 +113,12 @@ SOLVER_CONFIG_PARAMS = {
 
 # --- Training Configuration ---
 TRAINING_PARAMS = {
-    "num_epochs": 20000,
-    "learning_rate": 1e-4,
-    "early_stopping_patience": 3000,
+    "num_epochs": 40000,
+    "learning_rate": 1e-3,
+    "early_stopping_patience": 7000,
     "early_stopping_min_delta": 1e-6,
     "loss_metric": MSE,
-    "component_weights": {"native_protein": 1.0},
+    "component_weights": {"native_protein": 5.0},
     "save_checkpoints": True,
     "verbose": True,
 }
@@ -353,7 +353,7 @@ def main():
             early_stopping_min_delta=TRAINING_PARAMS["early_stopping_min_delta"],
             loss_metric=TRAINING_PARAMS["loss_metric"],
             component_weights=TRAINING_PARAMS["component_weights"],
-            validation_datasets=test_datasets if test_datasets else None,
+            # validation_datasets=test_datasets if test_datasets else None,
             solver_config=solver_config_obj,
             save_checkpoints=TRAINING_PARAMS["save_checkpoints"],
             verbose=TRAINING_PARAMS["verbose"],
