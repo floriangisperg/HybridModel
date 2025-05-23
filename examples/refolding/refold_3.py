@@ -60,14 +60,14 @@ except ImportError:
 MASTER_SEED = 45  # Can be changed for different initializations
 EXPERIMENT_BASE_NAME = "protein_refolding_denaturant_dependent"
 # Relative path to the data file within the DATA_DIR
-DATA_FILE_NAME = "combined_refolds.xlsx"
+DATA_FILE_NAME = "combined_refolds_filtered.xlsx"
 DATA_FILE_PATH = os.path.join(DATA_DIR, DATA_FILE_NAME)
 
 # --- Data Schema/Loading Config ---
 DATA_SCHEMA_CONFIG = {
     "time_column": "Refolding Time [min]",
     "run_id_column": "Experiment ID",
-    "train_ratio": 0.7,  # Let DatasetManager split by ratio
+    "train_ratio": 0.5,  # Let DatasetManager split by ratio
     "variables": [
         # (column_name, type, internal_name, is_output, calculate_rate)
         ("Native Product Monomer [mg/L]", VariableType.STATE, "native_protein", True, False),
@@ -86,8 +86,8 @@ NEURAL_NETWORK_CONFIGS = [
     NeuralNetworkConfig(
         name="a_fold",  # Changed from k_fold to a_fold
         # Removed urea from inputs as it's used directly in the mechanistic formula
-        input_features=["dtt", "gssg", "initial_protein", "ph", "native_protein", "urea"],
-        hidden_dims=[10,10,10,10],
+        input_features=["gssg", "initial_protein", "ph", "native_protein"],
+        hidden_dims=[8,8,8],
         output_activation="softplus",  # Ensure positive rate
         seed=MASTER_SEED
     )
@@ -113,9 +113,9 @@ SOLVER_CONFIG_PARAMS = {
 
 # --- Training Configuration ---
 TRAINING_PARAMS = {
-    "num_epochs": 40000,
-    "learning_rate": 1e-3,
-    "early_stopping_patience": 7000,
+    "num_epochs": 800000,
+    "learning_rate": 1e-4,
+    "early_stopping_patience": 20000,
     "early_stopping_min_delta": 1e-6,
     "loss_metric": MSE,
     "component_weights": {"native_protein": 5.0},
